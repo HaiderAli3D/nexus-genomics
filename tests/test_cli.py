@@ -1,13 +1,15 @@
-"""The command line, exercised the way the README tells someone to use it.
+"""Focused CLI contracts for command discovery, orchestration, reports, and exit codes.
 
-Every command documented in README.md and reports/monday_demo_checklist.md is invoked here,
-so a renamed command or a changed flag breaks the suite rather than the demo.
+The tests use offline synthetic adapters and temporary configuration. They establish the
+documented command names and selected option behavior; they do not claim to execute every
+literal README or runbook command against the live public sources.
 """
 
 from __future__ import annotations
 
 import csv
 import json
+import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -56,6 +58,15 @@ def _configure_fake_source(config: Path, *, target_layout: str) -> None:
     parsed = yaml.safe_load(config.read_text(encoding="utf-8"))
     parsed["output"] = {"target_layout": target_layout}
     parsed["sources"]["fake"] = {"enabled": True, "demo": {}}
+    config.write_text(yaml.safe_dump(parsed), encoding="utf-8")
+
+
+def _configure_only_fake_source(config: Path, *, target_layout: str) -> None:
+    parsed = yaml.safe_load(config.read_text(encoding="utf-8"))
+    parsed["output"] = {"target_layout": target_layout}
+    for source in parsed["sources"].values():
+        source["enabled"] = False
+    parsed["sources"]["fake"] = {"enabled": True, "demo": {}, "full": {}}
     config.write_text(yaml.safe_dump(parsed), encoding="utf-8")
 
 
@@ -224,6 +235,11 @@ def test_convert_all_reports_a_gated_source_instead_of_aborting(
     assert result.exit_code == 0, result.output
     assert "addgene" in result.output
     assert "skipping codontransformer" in result.output
+    receipt = json.loads((tmp_path / "out" / ".conversion-run.json").read_text("utf-8"))
+    assert receipt["complete"] is True
+    assert receipt["successfully_converted_source_keys"] == []
+    assert receipt["externally_gated_source_keys"] == ["addgene"]
+    assert receipt["generated_tables"] == []
 
 
 def test_convert_all_exits_non_zero_on_a_failure_that_is_not_a_gated_download(
@@ -254,6 +270,116 @@ def test_convert_all_exits_non_zero_on_a_failure_that_is_not_a_gated_download(
     )
     assert result.exit_code == 1
     assert "MemoryError" in result.output
+
+
+def test_convert_all_treats_an_unexpected_file_not_found_as_a_real_failure(
+    config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Missing open-source or output files must not masquerade as an authorized-data gate."""
+    import nexus_genomics.cli as cli_module
+
+    def missing_open_file(*_args: object, **_kwargs: object) -> list[Path]:
+        raise FileNotFoundError("open-source extraction vanished")
+
+    monkeypatch.setattr(cli_module, "convert_source", missing_open_file)
+    result = runner.invoke(
+        app,
+        [
+            "convert-all",
+            "--config",
+            str(config),
+            "--raw-dir",
+            str(tmp_path / "raw"),
+            "--out-dir",
+            str(tmp_path / "out"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "FileNotFoundError" in result.output
+    assert "gated download" not in result.output
+    receipt = json.loads((tmp_path / "out" / ".conversion-run.json").read_text("utf-8"))
+    assert receipt["complete"] is False
+
+
+def test_convert_all_writes_a_complete_receipt_bound_to_exact_tables_and_hashes(
+    config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A terminal log cannot prove which files survived; the atomic receipt must do so."""
+    import nexus_genomics.cli as cli_module
+
+    adapter = _TwoTargetAdapter()
+    _configure_only_fake_source(config, target_layout="native")
+    monkeypatch.setattr(cli_module, "ADAPTERS", {"fake": adapter})
+    monkeypatch.setattr(cli_module, "get_adapter", lambda _name: adapter)
+    out_dir = tmp_path / "strict"
+
+    result = runner.invoke(
+        app,
+        [
+            "convert-all",
+            "--config",
+            str(config),
+            "--out-dir",
+            str(out_dir),
+            "--strict-single-target",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    receipt = json.loads((out_dir / ".conversion-run.json").read_text("utf-8"))
+    assert receipt["format"] == "nexus-genomics-conversion-run"
+    assert receipt["version"] == 1
+    assert receipt["generator"] == "nexus-genomics 0.1.0"
+    assert receipt["complete"] is True
+    assert receipt["profile"] == "demo"
+    assert receipt["target_layout"] == "single"
+    assert receipt["enabled_source_keys"] == ["fake"]
+    assert receipt["successfully_converted_source_keys"] == ["fake"]
+    assert receipt["externally_gated_source_keys"] == []
+    assert [entry["path"] for entry in receipt["generated_tables"]] == [
+        "fake_two_target_demo__first_mechanism.ml.csv",
+        "fake_two_target_demo__second_mechanism.ml.csv",
+    ]
+    for entry in receipt["generated_tables"]:
+        table = out_dir / entry["path"]
+        manifest = _read_manifest(table)
+        assert entry["content_hash"] == manifest["content_hash"]
+
+
+def test_a_failed_rebuild_atomically_invalidates_a_prior_complete_receipt(
+    config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Coherent old triplets may remain, but no failed run may leave them certified current."""
+    import nexus_genomics.cli as cli_module
+
+    adapter = _TwoTargetAdapter()
+    _configure_only_fake_source(config, target_layout="native")
+    monkeypatch.setattr(cli_module, "ADAPTERS", {"fake": adapter})
+    monkeypatch.setattr(cli_module, "get_adapter", lambda _name: adapter)
+    out_dir = tmp_path / "strict"
+    command = [
+        "convert-all",
+        "--config",
+        str(config),
+        "--out-dir",
+        str(out_dir),
+        "--strict-single-target",
+    ]
+    first = runner.invoke(app, command)
+    assert first.exit_code == 0, first.output
+    assert json.loads((out_dir / ".conversion-run.json").read_text("utf-8"))["complete"]
+
+    def fail_rebuild(*_args: object, **_kwargs: object) -> list[Path]:
+        raise RuntimeError("synthetic rebuild failed")
+
+    monkeypatch.setattr(cli_module, "convert_source", fail_rebuild)
+    second = runner.invoke(app, command)
+
+    assert second.exit_code == 1
+    receipt = json.loads((out_dir / ".conversion-run.json").read_text("utf-8"))
+    assert receipt["complete"] is False
+    assert (out_dir / "fake_two_target_demo__first_mechanism.ml.csv").exists()
 
 
 def test_convert_native_mode_writes_one_table_with_every_target(
@@ -323,11 +449,16 @@ def test_convert_strict_mode_writes_one_named_table_per_target(
         manifest = _read_manifest(path)
         assert manifest["target_layout"] == "single"
         assert manifest["adapter_metadata"] == "preserved"
-        assert manifest["target_projection"] == {
-            "original_target_count": 2,
-            "original_target_index": index,
-            "original_target_name": name,
-        }
+        projection = manifest["target_projection"]
+        assert projection["original_target_count"] == 2
+        assert projection["original_target_index"] == index
+        assert projection["original_target_name"] == name
+        assert projection["original_target_slug"] == slug
+        assert projection["source_target_names"] == ["First mechanism", "Second mechanism"]
+        assert projection["source_target_slugs"] == ["first_mechanism", "second_mechanism"]
+        assert len(projection["source_target_hashes"]) == 2
+        assert projection["source_target_hash_algorithm"] == "blake2b-256"
+        assert projection["source_row_count"] == 2
         assert adapter.target_description in manifest["target_description"]
         assert name in manifest["target_description"]
     assert adapter.load_calls == 1
@@ -407,6 +538,119 @@ def test_convert_refuses_an_unknown_configured_target_layout(
     assert adapter.load_calls == 0
 
 
+def test_convert_refuses_a_boolean_window_cap_from_yaml_before_source_io(
+    config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """YAML parses ``true`` as bool, which must not silently become a one-window cap."""
+    import nexus_genomics.cli as cli_module
+
+    adapter = _TwoTargetAdapter()
+    _configure_fake_source(config, target_layout="native")
+    parsed = yaml.safe_load(config.read_text(encoding="utf-8"))
+    parsed["window"]["max_windows_per_sample"] = True
+    config.write_text(yaml.safe_dump(parsed), encoding="utf-8")
+    monkeypatch.setattr(cli_module, "get_adapter", lambda _name: adapter)
+
+    result = runner.invoke(
+        app,
+        ["convert", "fake", "--config", str(config), "--out-dir", str(tmp_path / "out")],
+    )
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, TypeError)
+    assert "non-boolean integer" in str(result.exception)
+    assert adapter.load_calls == 0
+
+
+def test_convert_rejects_a_misspelled_profile_before_source_io(
+    config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``ful`` must not run with empty adapter defaults and create plausible `_ful` files."""
+    import nexus_genomics.cli as cli_module
+
+    adapter = _TwoTargetAdapter()
+    _configure_fake_source(config, target_layout="native")
+    monkeypatch.setattr(cli_module, "get_adapter", lambda _name: adapter)
+
+    result = runner.invoke(
+        app,
+        [
+            "convert",
+            "fake",
+            "--profile",
+            "ful",
+            "--config",
+            str(config),
+            "--out-dir",
+            str(tmp_path / "out"),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert adapter.load_calls == 0
+
+
+def test_convert_all_rejects_a_misspelled_profile_before_any_source_io(
+    config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bulk mode must share the same closed profile vocabulary as single-source conversion."""
+    import nexus_genomics.cli as cli_module
+
+    calls = 0
+
+    def record_call(*_args: object, **_kwargs: object) -> list[Path]:
+        nonlocal calls
+        calls += 1
+        return []
+
+    monkeypatch.setattr(cli_module, "convert_source", record_call)
+    result = runner.invoke(
+        app,
+        [
+            "convert-all",
+            "--profile",
+            "ful",
+            "--config",
+            str(config),
+            "--out-dir",
+            str(tmp_path / "out"),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert calls == 0
+
+
+def test_convert_requires_the_selected_profile_block_before_source_io(
+    config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A valid profile name without source settings must not fall back to adapter defaults."""
+    import nexus_genomics.cli as cli_module
+
+    adapter = _TwoTargetAdapter()
+    _configure_fake_source(config, target_layout="native")
+    monkeypatch.setattr(cli_module, "get_adapter", lambda _name: adapter)
+
+    result = runner.invoke(
+        app,
+        [
+            "convert",
+            "fake",
+            "--profile",
+            "full",
+            "--config",
+            str(config),
+            "--out-dir",
+            str(tmp_path / "out"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, ValueError)
+    assert "has no 'full' profile block" in str(result.exception)
+    assert adapter.load_calls == 0
+
+
 def test_convert_all_forwards_the_resolved_strict_layout(
     config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -422,9 +666,10 @@ def test_convert_all_forwards_the_resolved_strict_layout(
         raw_dir: Path,
         out_dir: Path,
         strict_single_target: bool | None,
-    ) -> None:
+    ) -> list[Path]:
         _ = source, config_path, profile, raw_dir, out_dir
         calls.append(strict_single_target)
+        return []
 
     monkeypatch.setattr(cli_module, "convert_source", record_call)
     result = runner.invoke(
@@ -465,3 +710,33 @@ def test_the_shipped_config_parses_and_names_every_registered_source() -> None:
     assert parsed["window"]["length"] == 1000
     assert parsed["encoding"]["mode"] == "letter"
     assert parsed["output"]["target_layout"] == "native"
+
+
+def test_every_default_or_documented_generated_report_destination_is_git_ignored() -> None:
+    """Source-derived class counts and gated-input hashes must not become commit candidates."""
+    generated = {
+        "reports/validation_report.json",
+        "reports/validation_report.md",
+        "reports/strict/validation_report.json",
+        "reports/strict/validation_report.md",
+        "reports/email_compliance_report.json",
+        "reports/email_compliance_report.md",
+        "reports/source_audit_status.md",
+    }
+    result = subprocess.run(
+        [
+            "git",
+            "-c",
+            "core.excludesFile=NUL",
+            "check-ignore",
+            "--no-index",
+            *sorted(generated),
+        ],
+        cwd=Path.cwd(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert set(result.stdout.splitlines()) == generated

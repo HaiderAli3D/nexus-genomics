@@ -1,6 +1,7 @@
 # Source audit
 
-What each of the four sources **actually is**, as opposed to what the brief describes it as.
+What each of the four original sources **actually is**, plus the narrower fifth source added from
+FELIX Supporting Information.
 
 Every claim below was produced by one researcher agent working from primary sources and then
 re-checked by an independent adversarial verifier whose job was to refute it. Where the two
@@ -9,12 +10,16 @@ and are corrected here.
 
 ## Headline
 
-**None of the four sources is a general natural-versus-engineered sequence benchmark.** Three
-of them can nevertheless produce a genuinely labelled Nexus CSV, just not with that label.
-No labels have been fabricated to fill the gap.
+**None of the four original sources supplies a general natural-versus-engineered benchmark.**
+The fifth source, ACS Supporting Information for the GUARDIAN paper, records the narrower
+event-relative distinction between sequence introduced by a recorded engineering event and
+host-context sequence not introduced by that event. That supports a useful contrast, but not a
+general benchmark over arbitrary sequences. The original sources retain only the labels they
+actually support. No labels have been fabricated to fill any gap.
 
 | Source | What it actually is | Honest target | Status |
 |---|---|---|---|
+| **FELIX Supporting Information** | Per-signature, event-relative provenance recorded by the test-and-evaluation team | **`0` host context not introduced by the event / `1` introduced by the event** | **Converted** |
 | Addgene / GEAC | A real labelled corpus — of **lab of origin**, 1,314 classes. 100% engineered; no natural class exists. | `lab_id` | **Blocked**: gated download |
 | IARPA FELIX / GUARDIAN | Detector *output* plus 1.27 Mbp of real DNA. Its `engineered` field is a prediction, and at sequence level it is single-class. | `part_role` (annotation) | Converted, narrowly |
 | SeqScreen / FunSoC | An analysis **pipeline**. No provenance labels at all. But a real biocurated pathogenicity-mechanism label set exists. | 32 FunSoC binaries | Converted |
@@ -54,7 +59,83 @@ is reported to contain 374 duplicated sequence strings over 63,017 rows. The val
 reports duplicate sequences on every file it sees, so this will be confirmed or corrected the
 moment the download arrives.
 
-## 2. IARPA FELIX / GUARDIAN / MIDOE
+## 1b. FELIX Supporting Information — a recorded-event sequence contrast
+
+| Field | Value |
+|---|---|
+| Official URL | [10.1021/acssynbio.3c00398](https://doi.org/10.1021/acssynbio.3c00398), *Supporting Information* |
+| Raw file location | `data/raw/felix_signatures/sb3c00398_si_001.zip` — **you must fetch this in a browser** (175 KB, free) |
+| File format | ZIP of one FASTA, one CSV and one XLSX |
+| Unit of one sample | One engineering signature (or one of its flanks) |
+| Sequence field | The FASTA — DNA nucleotide, 335 records, 562,114 bp |
+| Ground-truth field | The element **type**, encoded in each signature's name |
+| Label semantics | `0` host-context sequence not introduced by the recorded event · `1` sequence introduced by that event |
+| Licence | ACS SI, free to access. Reproduction rights granted to the U.S. Government only, so third-party redistribution is **not** established. Keep outputs local. |
+| Scientifically valid to convert? | **Yes, as this narrower event-relative contrast; not as a general benchmark** |
+| Blockers | None, once the ZIP is in place |
+
+**The three files, whose schemas nobody had seen before this project read them:**
+
+- `..._signature_sequences.fa` — 335 records. Names carry a lab prefix, an `IF#####` number,
+  the element, **its length**, **its type** and the origin organism, e.g.
+  `LBNL_IF00015_AmpR_861bp_plasmid.element_Staphylococcus.aureus`. `_flank1` / `_flank2`
+  records are the sequence either side of the change.
+- `..._sample_signatures.csv` — `Sample_ID,Master_Sample_ID,IF_Element`, 1,004 rows over 75
+  samples and 340 elements.
+- `..._sample_metadata.xlsx` — 100 samples with `Engineering_Key` (**yes 75 / no 25**),
+  `Insert_Over_10_bp` (**yes 60 / no 40** — exactly the paper's Table 1), `Organism`,
+  `BioSample`, `SRA`, `Sample_Type`, `Fraction_Engineered`. Sample-level, so it cannot label a
+  sequence; recorded in the manifest as context.
+
+**The label distinction that decides everything.** A signature file name does not establish
+that every listed sequence was introduced by the recorded event:
+
+- **insertion / plasmid.element / plasmid** → sequence introduced by the recorded event.
+  **Class 1.**
+- **deletion / compound.deletion** → host-context sequence the recorded event removed, so it
+  was not introduced by that event. **Class 0.** This is event-relative provenance, not a
+  global assertion that the sequence is natural.
+- **flank** → host-context sequence bordering the recorded change and not introduced by it.
+  **Class 0.**
+- **insertion.site** → excluded: the source does not establish that the supplied sequence is
+  the inserted material rather than host context at the site.
+- **inversion, reassortment, translocation, point mutation** → excluded: position or base-level
+  change does not establish either emitted sequence-level provenance class.
+
+The emitted records come from the same samples, laboratories, and sequencing run. That reduces
+the obvious source-batch confounder of pairing them against unrelated reference genomes, but it
+does not turn this recorded-event contrast into a general natural-versus-engineered benchmark.
+Fresh full output contains **315 rows: 164 class 0 and 151 class 1**. The adapter excludes 20
+unsupported records, including all 8 `insertion.site` records, and quarantines 2 malformed FASTA
+records.
+
+**A parsing defect found by a pre-email adversarial review, not a defect in the source.** The
+element-type parser originally read only the token immediately after a signature's length marker.
+Six elements carry an extra descriptor in that slot before the real type keyword — a partial-CDS
+marker or an inline indel description, e.g. `..._9bp_607-615delACGACCTCC_..._deletion_...` — so
+the parser returned the descriptor, found no recognised type, and wrongly excluded a genuinely
+classifiable record as unsupported (309 rows, 26 excluded, instead of the correct 315 rows, 20
+excluded). It never assigned the wrong class to a record; the failure was exclusion, not
+mislabelling. Fixed by scanning every token after the length marker for a recognised keyword.
+
+**Two defects in the published file, both surfaced rather than absorbed:**
+
+1. **Two FASTA records are missing the `>` on their header line.** A naive parser appends the
+   header text and the following sequence to the *previous* record — which is how one 16 bp
+   signature reads as 202,036 bp. Their names do not appear in the sample-signature CSV, so
+   the repair could not be verified against anything and both were **quarantined, not
+   guessed at**.
+2. **11 of 222 non-flank records disagree with the length their own name states** (e.g.
+   `adh1_24bp_deletion` is 1,023 bp). Every signature name declares its own length, which
+   makes the file self-checking; the disagreements are recorded in the manifest as
+   `length_token_disagreements`.
+
+**The confounder you must quote alongside any result.** Introduced elements are much longer
+than much of the host-context class. The encoder pads to a fixed width, so length is visible as
+the point where padding starts. The freshly measured full-output
+`length_only_baseline_accuracy` is **0.7587**, recorded in the manifest for exactly this reason.
+
+## 2. IARPA FELIX / GUARDIAN / MIDOE (the public repository)
 
 | Field | Value |
 |---|---|
@@ -66,7 +147,7 @@ moment the download arrives.
 | Ground-truth field | **None that is ground truth.** `detections[].engineered` is a *detector assertion* |
 | Licence | Apache-2.0. Redistribution permitted with attribution |
 | Scientifically valid to convert? | **Not as natural-vs-engineered.** Yes as part-role annotation |
-| Blockers | The real ground truth needs one manual browser download |
+| Blockers | The repository itself has no general sequence-provenance ground truth; the separate SI source supports only the narrower recorded-event contrast above |
 
 **Measured, by parsing all 340 files rather than reading the docs:** 1,672 features, of which
 **1,670 carry real DNA** — 1,266,189 bp, 11 to 52,182 bp, median 288. 627 detections across

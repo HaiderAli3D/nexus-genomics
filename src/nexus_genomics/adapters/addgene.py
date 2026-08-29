@@ -33,7 +33,12 @@ from typing import Any, Final
 
 import pandas as pd
 
-from nexus_genomics.adapters.base import Availability, LoadedSource, stable_class_index
+from nexus_genomics.adapters.base import (
+    Availability,
+    GatedSourceUnavailableError,
+    LoadedSource,
+    stable_class_index,
+)
 from nexus_genomics.cleaning import Alphabet
 from nexus_genomics.common import SampleRecord, hash_file
 
@@ -106,7 +111,9 @@ class AddgeneAdapter:
     def load(self, raw_dir: Path, options: Mapping[str, Any]) -> LoadedSource:
         availability = self.availability(raw_dir)
         if not availability.ready:
-            raise FileNotFoundError(f"{availability.detail}\n\n{availability.manual_steps}")
+            raise GatedSourceUnavailableError(
+                f"{availability.detail}\n\n{availability.manual_steps}"
+            )
 
         values_path, labels_path = raw_dir / VALUES_NAME, raw_dir / LABELS_NAME
         limit = options.get("max_records")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -188,3 +189,87 @@ def test_a_free_text_field_cannot_break_the_samples_sidecar(tmp_path: Path) -> N
     with samples_path(path).open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     assert rows[0]["description"] == 'a, b "quoted", c\nnewline'
+
+
+def test_boolean_target_values_are_refused_instead_of_becoming_one(tmp_path: Path) -> None:
+    """``True`` is an integer subclass, but accepting it hides an adapter schema defect."""
+    with pytest.raises(TypeError, match="exact Python integers"):
+        write(tmp_path, [Row("s1", (True,), (1, 3, 7))], 3)
+
+
+def test_float_target_values_are_refused_instead_of_becoming_numeric_text(tmp_path: Path) -> None:
+    """A float target can make a categorical class look documented after spreadsheet coercion."""
+    with pytest.raises(TypeError, match="exact Python integers"):
+        write(tmp_path, [Row("s1", (1.0,), (1, 3, 7))], 3)  # type: ignore[arg-type]
+
+
+def test_string_target_values_are_refused_instead_of_becoming_valid_looking_cells(
+    tmp_path: Path,
+) -> None:
+    """A numeric-looking string is still evidence that the adapter broke its typed contract."""
+    with pytest.raises(TypeError, match="exact Python integers"):
+        write(tmp_path, [Row("s1", ("1",), (1, 3, 7))], 3)  # type: ignore[arg-type]
+
+
+def test_nan_target_values_are_refused_before_csv_serialisation(tmp_path: Path) -> None:
+    """NaN must not reach a categorical target column or become an undocumented class."""
+    with pytest.raises(TypeError, match="exact Python integers"):
+        write(tmp_path, [Row("s1", (math.nan,), (1, 3, 7))], 3)  # type: ignore[arg-type]
+
+
+def test_infinite_target_values_are_refused_before_csv_serialisation(tmp_path: Path) -> None:
+    """Infinity is not a class and must not be accepted merely because it stringifies."""
+    with pytest.raises(TypeError, match="exact Python integers"):
+        write(tmp_path, [Row("s1", (math.inf,), (1, 3, 7))], 3)  # type: ignore[arg-type]
+
+
+def test_an_undocumented_integer_target_is_refused_by_the_writer(tmp_path: Path) -> None:
+    """Validation after writing is too late when the adapter already invented class 7."""
+    with pytest.raises(ValueError, match="not documented by label_semantics"):
+        write(tmp_path, [Row("s1", (7,), (1, 3, 7))], 3)
+
+
+def test_an_empty_present_label_map_documents_no_integer_target_values(tmp_path: Path) -> None:
+    """An empty declared vocabulary must not disable the writer's undocumented-class refusal."""
+    with pytest.raises(ValueError, match="not documented by label_semantics"):
+        write_nexus_csv(
+            tmp_path / "d.ml.csv",
+            [Row("s1", (0,), (1, 3, 7))],
+            n_features=3,
+            n_targets=1,
+            manifest={"label_semantics": {}},
+            sample_metadata=[{"sample_id": "s1"}],
+        )
+
+
+def test_the_manifest_hashes_the_complete_samples_sidecar_bytes(tmp_path: Path) -> None:
+    """A sampled semantic check cannot protect metadata rows it did not happen to select."""
+    from nexus_genomics.common import CONTENT_HASH_ALGORITHM, hash_file
+
+    path = write(
+        tmp_path,
+        [Row("s1", (0,), (1, 3, 7)), Row("s2", (1,), (20, 20, 20))],
+        3,
+    )
+    payload = json.loads(manifest_path(path).read_text(encoding="utf-8"))
+    manifest = payload["manifest"]
+
+    assert manifest["samples_content_hash"] == hash_file(samples_path(path))
+    assert manifest["samples_content_hash_algorithm"] == CONTENT_HASH_ALGORITHM
+    assert manifest["samples_n_rows"] == 2
+
+
+def test_the_writer_refuses_samples_ids_that_do_not_exactly_match_table_order(
+    tmp_path: Path,
+) -> None:
+    """Writing an internally inconsistent triplet would make provenance joins ambiguous."""
+    path = tmp_path / "d.ml.csv"
+    with pytest.raises(ValueError, match="exactly match table sample_id order"):
+        write_nexus_csv(
+            path,
+            [Row("s1", (0,), (1, 3, 7)), Row("s2", (1,), (20, 20, 20))],
+            n_features=3,
+            n_targets=1,
+            manifest={"label_semantics": {"0": "a", "1": "b"}},
+            sample_metadata=[{"sample_id": "s2"}, {"sample_id": "s1"}],
+        )

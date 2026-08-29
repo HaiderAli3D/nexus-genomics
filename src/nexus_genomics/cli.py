@@ -9,6 +9,8 @@ that cannot be tied back to the settings that produced it is a report nobody can
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -18,6 +20,7 @@ from rich.console import Console
 from rich.table import Table
 
 from nexus_genomics.adapters import ADAPTERS, get_adapter
+from nexus_genomics.adapters.base import GatedSourceUnavailableError
 from nexus_genomics.common import PACKAGE_VERSION, hash_text
 from nexus_genomics.compliance import audit_email_compliance
 from nexus_genomics.compliance import render_markdown as render_compliance
@@ -25,6 +28,10 @@ from nexus_genomics.encoding import EncodingMode, LengthPolicy
 from nexus_genomics.nexus_csv import EXTENSION
 from nexus_genomics.pipeline import ConvertOptions, convert
 from nexus_genomics.projection import projected_path, single_target_projections
+from nexus_genomics.run_receipt import (
+    build_conversion_run_receipt,
+    write_conversion_run_receipt,
+)
 from nexus_genomics.validation import compare_runs, render_markdown, validate_file
 
 app = typer.Typer(
@@ -42,6 +49,11 @@ DEFAULT_RAW = Path("data/raw")
 DEFAULT_OUT = Path("outputs")
 DEFAULT_REPORTS = Path("reports")
 DEFAULT_STRICT_OUT = DEFAULT_OUT / "strict"
+
+
+class Profile(StrEnum):
+    DEMO = "demo"
+    FULL = "full"
 
 
 def _load_config(path: Path) -> tuple[dict[str, Any], str]:
@@ -68,6 +80,20 @@ def _target_layout(config: dict[str, Any], strict_single_target: bool | None) ->
     if strict_single_target is None:
         return configured
     return "single" if strict_single_target else "native"
+
+
+def _profile_options(config: dict[str, Any], source: str, profile: Profile) -> dict[str, Any]:
+    source_config = config.get("sources", {}).get(source)
+    if not isinstance(source_config, Mapping):
+        raise ValueError(f"configuration has no sources.{source} block")
+    if profile.value not in source_config:
+        raise ValueError(f"sources.{source} has no {profile.value!r} profile block")
+    options = source_config[profile.value]
+    if not isinstance(options, Mapping):
+        raise TypeError(
+            f"sources.{source}.{profile.value} must be a mapping, got {type(options).__name__}"
+        )
+    return dict(options)
 
 
 def _echo_config(**values: Any) -> None:
@@ -122,21 +148,34 @@ def audit(
 
 @app.command()
 def compliance(
-    profile: Annotated[str, typer.Option(help="Output profile to audit.")] = "demo",
+    profile: Annotated[Profile, typer.Option(help="Output profile to audit.")] = Profile.DEMO,
+    config: Annotated[Path, typer.Option(help="Configuration file.")] = DEFAULT_CONFIG,
     raw_dir: Annotated[Path, typer.Option(help="Where raw downloads live.")] = DEFAULT_RAW,
     out_dir: Annotated[Path, typer.Option(help="Where strict outputs live.")] = DEFAULT_STRICT_OUT,
     reports_dir: Annotated[Path, typer.Option(help="Where to write reports.")] = DEFAULT_REPORTS,
 ) -> None:
     """Audit strict outputs against the email contract without inventing evidence."""
+    cfg, digest = _load_config(config)
+    enabled = [name for name in ADAPTERS if cfg["sources"].get(name, {}).get("enabled", False)]
+    for name in enabled:
+        _profile_options(cfg, name, profile)
     _echo_config(
         command="compliance",
-        profile=profile,
+        profile=profile.value,
+        config=f"{config} (blake2b {digest[:16]}...)",
         raw_dir=raw_dir,
         out_dir=out_dir,
         reports_dir=reports_dir,
         version=PACKAGE_VERSION,
     )
-    report = audit_email_compliance(ADAPTERS, raw_dir, out_dir, profile)
+    report = audit_email_compliance(
+        ADAPTERS,
+        raw_dir,
+        out_dir,
+        profile.value,
+        config_digest=digest,
+        enabled_source_keys=enabled,
+    )
 
     reports_dir.mkdir(parents=True, exist_ok=True)
     json_path = reports_dir / "email_compliance_report.json"
@@ -161,7 +200,7 @@ def compliance(
     console.print(table)
     console.print(f"[green]wrote[/green] {json_path}")
     console.print(f"[green]wrote[/green] {markdown_path}")
-    if not report.ok:
+    if not report.exit_ok:
         raise typer.Exit(code=1)
 
 
@@ -169,7 +208,7 @@ def compliance(
 def convert_source(
     source: Annotated[str, typer.Argument(help=f"One of: {', '.join(ADAPTERS)}")],
     config: Annotated[Path, typer.Option(help="Configuration file.")] = DEFAULT_CONFIG,
-    profile: Annotated[str, typer.Option(help="'demo' or 'full'.")] = "demo",
+    profile: Annotated[Profile, typer.Option(help="'demo' or 'full'.")] = Profile.DEMO,
     raw_dir: Annotated[Path, typer.Option(help="Where raw downloads live.")] = DEFAULT_RAW,
     out_dir: Annotated[Path, typer.Option(help="Where to write outputs.")] = DEFAULT_OUT,
     strict_single_target: Annotated[
@@ -179,19 +218,18 @@ def convert_source(
             help="Write one table per target or preserve the source's native target block.",
         ),
     ] = None,
-) -> None:
+) -> list[Path]:
     """Convert one source into a Nexus CSV plus its sidecars."""
     cfg, digest = _load_config(config)
     target_layout = _target_layout(cfg, strict_single_target)
     adapter = get_adapter(source)
-    source_cfg = cfg["sources"][source]
-    options = dict(source_cfg.get(profile) or {})
+    options = _profile_options(cfg, source, profile)
     convert_options = _options(cfg)
 
     _echo_config(
         command="convert",
         source=source,
-        profile=profile,
+        profile=profile.value,
         config=f"{config} (blake2b {digest[:16]}...)",
         window=f"{convert_options.width} x {convert_options.policy.value}",
         encoding=convert_options.mode.value,
@@ -200,7 +238,7 @@ def convert_source(
         out_dir=out_dir,
     )
 
-    out_path = out_dir / f"{adapter.name}_{profile}{EXTENSION}"
+    out_path = out_dir / f"{adapter.name}_{profile.value}{EXTENSION}"
     with console.status(f"loading {source}..."):
         loaded = adapter.load(raw_dir / source, options)
     console.print(f"loaded [bold]{len(loaded.records)}[/bold] records")
@@ -220,6 +258,7 @@ def convert_source(
             for projection in single_target_projections(loaded)
         ]
 
+    table_paths: list[Path] = []
     for conversion_source, conversion_path, target_description in conversions:
         extra_manifest = dict(conversion_source.manifest_extra)
         extra_manifest["target_layout"] = target_layout
@@ -238,6 +277,7 @@ def convert_source(
             config_digest=digest,
             extra_manifest=extra_manifest,
         )
+        table_paths.append(outcome.path)
         console.print(
             f"[green]wrote[/green] {outcome.n_rows} rows x "
             f"{outcome.n_features + 1 + conversion_source.n_targets} columns"
@@ -248,12 +288,13 @@ def convert_source(
             console.print(f"[yellow]quarantined[/yellow] {len(outcome.quarantine)} record(s)")
         if outcome.truncated_residues:
             console.print(f"[yellow]truncated[/yellow] {outcome.truncated_residues:,} residues")
+    return table_paths
 
 
 @app.command()
 def convert_all(
     config: Annotated[Path, typer.Option(help="Configuration file.")] = DEFAULT_CONFIG,
-    profile: Annotated[str, typer.Option(help="'demo' or 'full'.")] = "demo",
+    profile: Annotated[Profile, typer.Option(help="'demo' or 'full'.")] = Profile.DEMO,
     raw_dir: Annotated[Path, typer.Option(help="Where raw downloads live.")] = DEFAULT_RAW,
     out_dir: Annotated[Path, typer.Option(help="Where to write outputs.")] = DEFAULT_OUT,
     strict_single_target: Annotated[
@@ -265,24 +306,42 @@ def convert_all(
     ] = None,
 ) -> None:
     """Convert every enabled source, reporting rather than aborting on the gated ones."""
-    cfg, _ = _load_config(config)
+    cfg, digest = _load_config(config)
     target_layout = _target_layout(cfg, strict_single_target)
     _echo_config(
         command="convert-all",
-        profile=profile,
+        profile=profile.value,
         config=config,
         target_layout=target_layout,
         out_dir=out_dir,
     )
+    enabled = [name for name in ADAPTERS if cfg["sources"].get(name, {}).get("enabled", False)]
+    initial_receipt = build_conversion_run_receipt(
+        out_dir,
+        complete=False,
+        profile=profile.value,
+        target_layout=target_layout,
+        config_hash=digest,
+        enabled_source_keys=enabled,
+        successfully_converted_source_keys=(),
+        externally_gated_source_keys=(),
+        table_paths=(),
+    )
+    write_conversion_run_receipt(out_dir, initial_receipt)
+    for name in enabled:
+        _profile_options(cfg, name, profile)
+
     failures: list[tuple[str, str]] = []
     gated: list[tuple[str, str]] = []
+    converted: list[str] = []
+    generated_paths: list[Path] = []
     for name in ADAPTERS:
         if not cfg["sources"].get(name, {}).get("enabled", False):
             console.print(f"[dim]skipping {name} (disabled in config)[/dim]")
             continue
         console.rule(name)
         try:
-            convert_source(
+            paths = convert_source(
                 name,
                 config,
                 profile,
@@ -290,7 +349,9 @@ def convert_all(
                 out_dir,
                 target_layout == "single",
             )
-        except FileNotFoundError as exc:
+            converted.append(name)
+            generated_paths.extend(paths)
+        except GatedSourceUnavailableError as exc:
             # A gated source with no file present is an expected state, not a failure: the
             # whole point of convert-all is that it finishes and reports.
             gated.append((name, str(exc).splitlines()[0]))
@@ -304,6 +365,18 @@ def convert_all(
         console.print(f"[yellow]{name}[/yellow]: awaiting a manual download — {detail}")
     for name, detail in failures:
         console.print(f"[red]{name}[/red]: {detail.splitlines()[0]}")
+    final_receipt = build_conversion_run_receipt(
+        out_dir,
+        complete=not failures,
+        profile=profile.value,
+        target_layout=target_layout,
+        config_hash=digest,
+        enabled_source_keys=enabled,
+        successfully_converted_source_keys=converted,
+        externally_gated_source_keys=[name for name, _detail in gated],
+        table_paths=generated_paths,
+    )
+    write_conversion_run_receipt(out_dir, final_receipt)
     if not failures and not gated:
         console.print("[green]every enabled source converted[/green]")
     if failures:

@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from nexus_genomics.adapters.base import LoadedSource
-from nexus_genomics.common import SampleRecord
+from nexus_genomics.common import CONTENT_HASH_ALGORITHM, SampleRecord, blake2b_256
 
-__all__ = ["TargetProjection", "projected_path", "single_target_projections"]
+__all__ = [
+    "TargetProjection",
+    "ordered_target_hash",
+    "projected_path",
+    "single_target_projections",
+]
 
 _OUTPUT_SUFFIX = ".ml.csv"
 
@@ -22,6 +29,34 @@ class TargetProjection:
     name: str
     slug: str
     source: LoadedSource
+
+
+def ordered_target_hash(sample_ids: Sequence[str], target_values: Sequence[int]) -> str:
+    """Bind one target to its ordered primary keys without accepting typed-label drift."""
+    if len(sample_ids) != len(target_values):
+        raise ValueError(
+            f"target hash needs one value per sample id, got {len(sample_ids)} and "
+            f"{len(target_values)}"
+        )
+    pairs: list[list[str | int]] = []
+    for sample_id, value in zip(sample_ids, target_values, strict=True):
+        if type(value) is not int:
+            raise TypeError(
+                f"target hash values must be exact integers, got {value!r} "
+                f"({type(value).__name__}) for {sample_id!r}"
+            )
+        pairs.append([sample_id, value])
+    encoded = json.dumps(
+        pairs,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return blake2b_256(encoded)
+
+
+def _slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
 
 
 def single_target_projections(source: LoadedSource) -> list[TargetProjection]:
@@ -38,6 +73,13 @@ def single_target_projections(source: LoadedSource) -> list[TargetProjection]:
                 f"record {record.sample_id!r} label must have exactly "
                 f"{source.n_targets} values, got {len(record.label)}"
             )
+        invalid = [value for value in record.label if type(value) is not int]
+        if invalid:
+            value = invalid[0]
+            raise TypeError(
+                f"record {record.sample_id!r} target values must be exact integers; got "
+                f"{value!r} ({type(value).__name__})"
+            )
         validated.append((record, record.label))
 
     if source.n_targets == 1:
@@ -49,21 +91,39 @@ def single_target_projections(source: LoadedSource) -> list[TargetProjection]:
             f"expected {source.n_targets}, got {len(source.target_names)}"
         )
 
-    projections: list[TargetProjection] = []
-    slugs: set[str] = set()
-    for index, name in enumerate(source.target_names):
-        slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+    target_slugs: list[str] = []
+    seen_slugs: set[str] = set()
+    for name in source.target_names:
+        slug = _slug(name)
         if not slug:
             raise ValueError(f"target name {name!r} produces an empty slug")
-        if slug in slugs:
+        if slug in seen_slugs:
             raise ValueError(f"target name {name!r} produces duplicate slug {slug!r}")
-        slugs.add(slug)
+        seen_slugs.add(slug)
+        target_slugs.append(slug)
 
+    sample_ids = [record.sample_id for record, _label in validated]
+    target_hashes = [
+        ordered_target_hash(sample_ids, [label[index] for _record, label in validated])
+        for index in range(source.n_targets)
+    ]
+    source_contract = {
+        "source_target_names": list(source.target_names),
+        "source_target_slugs": target_slugs,
+        "source_target_hashes": target_hashes,
+        "source_target_hash_algorithm": CONTENT_HASH_ALGORITHM,
+        "source_row_count": len(validated),
+    }
+
+    projections: list[TargetProjection] = []
+    for index, (name, slug) in enumerate(zip(source.target_names, target_slugs, strict=True)):
         manifest_extra = dict(source.manifest_extra)
         manifest_extra["target_projection"] = {
             "original_target_index": index,
             "original_target_name": name,
+            "original_target_slug": slug,
             "original_target_count": source.n_targets,
+            **source_contract,
         }
         records = [
             SampleRecord(

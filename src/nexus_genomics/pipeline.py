@@ -1,7 +1,7 @@
 """Records in, Nexus CSV out. The one path every source travels.
 
 Cleaning, encoding, padding, windowing and writing happen here and only here, so that all
-four sources are subject to identical rules and a fix lands in one place.
+five sources are subject to identical rules and a fix lands in one place.
 """
 
 from __future__ import annotations
@@ -38,6 +38,20 @@ class ConvertOptions:
     Applied deterministically (the first N windows) and COUNTED, never silently. A capped
     sample records ``windows_dropped`` so the tail it lost is visible in the sidecar.
     """
+
+    def __post_init__(self) -> None:
+        cap = self.max_windows_per_sample
+        if cap is None:
+            return
+        if type(cap) is not int:
+            raise TypeError(
+                "max_windows_per_sample must be None or a non-boolean integer greater "
+                f"than zero, got {cap!r} ({type(cap).__name__})"
+            )
+        if cap <= 0:
+            raise ValueError(
+                f"max_windows_per_sample must be greater than zero when configured, got {cap}"
+            )
 
 
 @dataclass(slots=True)

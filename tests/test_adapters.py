@@ -139,12 +139,14 @@ def test_the_gated_source_explains_the_download_instead_of_failing_obscurely(
     tmp_path: Path,
 ) -> None:
     """'FileNotFoundError' alone would send someone hunting for a bug that is not there."""
+    from nexus_genomics.adapters.base import GatedSourceUnavailableError
+
     status = AddgeneAdapter().availability(tmp_path / "empty")
     assert not status.ready
     assert "drivendata.org/accounts/signup" in status.manual_steps
     assert "ACCEPT THE COMPETITION RULES" in status.manual_steps
     assert status.expected_files == ("train_values.csv", "train_labels.csv")
-    with pytest.raises(FileNotFoundError, match="drivendata"):
+    with pytest.raises(GatedSourceUnavailableError, match="drivendata"):
         AddgeneAdapter().load(tmp_path / "empty", {})
 
 

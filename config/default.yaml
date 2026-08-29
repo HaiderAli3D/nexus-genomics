@@ -59,6 +59,19 @@ sources:
       max_records: 13500      # the whole curated set is 13,203 accessions
       batch: 200
 
+  felix_signatures:
+    # A narrower recorded-event contrast, not a general natural/engineered benchmark.
+    # 0 = host-context sequence not introduced by the recorded event (including flanks and
+    # sequence the event removed); 1 = sequence introduced by the recorded event.
+    # Needs sb3c00398_si_001.zip in data/raw/felix_signatures/ -- see the adapter docstring.
+    # NOTE: length is strongly predictive because introduced elements are generally much longer
+    # than host context. The manifest records the freshly measured baseline; compare against it.
+    enabled: true
+    demo:
+      max_records: 200
+    full:
+      max_records: null
+
   felix:
     # Emits genetic PART ROLE (multiclass annotation), NOT natural-versus-engineered.
     # Only 280 of the 1,670 sequences in the public repo can be linked to GUARDIAN's

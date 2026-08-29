@@ -13,8 +13,10 @@ outputs/
 # and blake2b digests of both gated files, and source_audit_status.md reflects local state.
 # The hand-written reports (source_audit.md, unresolved_questions.md,
 # monday_demo_checklist.md) are NOT generated and are kept.
-reports/validation_report.json
-reports/validation_report.md
+reports/**/validation_report.json
+reports/**/validation_report.md
+reports/**/email_compliance_report.json
+reports/**/email_compliance_report.md
 reports/source_audit_status.md
 
 .venv/
@@ -24,8 +26,15 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.tmp/
 
 # Local tool/session state, not project content.
 .loki/
 .remember/
 .superpowers/
+
+# Ad-hoc export folder for emailing a subset of outputs. Never committed: it can contain
+# felix_natural_vs_engineered, whose licence says redistribution by third parties is not
+# established, so this must never leave the local machine via git any more than via email.
+to_send/
+to-send.zip

@@ -81,15 +81,56 @@ One finding was downgraded rather than refuted: the single-class validation gap 
 ## After the fixes
 
 ```
-104 tests passed
+199 tests passed
 ruff check   All checks passed!
-ruff format  29 files left unchanged
-mypy --strict  Success: no issues found in 21 source files
-validate     6 files, 124 checks, 0 failed
-reproduce    3/3 demo files byte-identical across independent runs
+ruff format  38 files left unchanged
+mypy --strict  Success: no issues found in 27 source files
+validate     FELIX regenerated files pass; stale network-backed files correctly fail freshness
+reproduce    4/4 demo files byte-identical across independent runs
 ```
 
 Manual spot-checks, re-run against the sources rather than against the pipeline's own output:
 6 of 6 CodonTransformer pairs translate to the identical protein; 6 of 6 FELIX rows decode
 exactly to their source feature in the MIDOE tarball; 4 of 4 FunSoC rows decode exactly to
 the sequence UniProt returns for that accession today.
+
+---
+
+## Corrected addendum — the FELIX Supporting Information (2026-08-29)
+
+The gated ZIP arrived with a narrower recorded-event sequence contrast. It does not establish a
+general natural-versus-engineered benchmark. It came with its own label trap, which is worth
+recording because the obvious reading is wrong.
+
+**The trap.** The file is called *signature_sequences*, and every record in it is an
+engineering signature. The obvious move is to label them all introduced and find a negative
+somewhere else. That exceeds the evidence: a **deletion's** signature sequence is host context
+removed by this recorded event, so it was not introduced by that event. It belongs in
+event-relative class 0, without asserting that no earlier event introduced it. Insertions and
+plasmid elements are class 1 only where the recorded event introduced that sequence. Getting this
+distinction wrong would ship a plausible-looking target with fabricated semantics.
+
+Verified by hand on ten random rows: `leu2delta_7679bp_deletion` → class 0 (host-context *LEU2*
+sequence removed by the event), `Tn5-NeoR-KanR_792bp_plasmid.element` → class 1 (introduced
+transposon cassette), `ZmPsy_1233bp_insertion_Zea.mays` → class 1, and flanks → class 0. Ten of
+ten decode exactly to the source FASTA and match the documented event-relative rule.
+
+**Three defects in the published SI, surfaced rather than absorbed:**
+
+| Defect | Consequence if ignored | Handling |
+|---|---|---|
+| Two FASTA headers are missing their `>` | A naive parser appends the header text and the next sequence to the *previous* record, inflating one 16 bp signature to 202,036 bp | Both quarantined and named in the manifest. The repair could not be verified — neither name appears in the sample-signature CSV — so it was not guessed at |
+| 11 of 222 non-flank records disagree with the length their own name states (`adh1_24bp_deletion` is 1,023 bp) | Silent | Every signature name declares its own length, which makes the file self-checking. The disagreements are listed as `length_token_disagreements`; this check would have caught the header defect on its own |
+| 6 CSV elements have no sequence in the FASTA | Silent drop | Listed as `elements_in_csv_without_a_sequence` |
+
+**The confounder that has to travel with the dataset.** Introduced elements are generally longer
+than host-context records, and padding makes length directly visible to a model. The adapter
+recomputes `length_only_baseline_accuracy` from each loaded profile and records it in the manifest;
+results must be quoted against that fresh baseline rather than a stale documentation constant.
+
+**Unsupported records are excluded rather than labelled.** Inversions, reassortments, a
+translocation, point mutations, and `insertion.site` records do not establish either emitted
+sequence-level provenance class. They are counted by type and reason in the manifest.
+
+The load-bearing tests require event-relative wording and explicitly reject `insertion.site` as
+introduced cargo.

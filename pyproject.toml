@@ -21,6 +21,11 @@ dependencies = [
     "requests==2.31.0",
     "typer==0.27.1",
     "rich==14.2.0",
+    # Reads the FELIX Supporting Information sample-metadata workbook. A hard dependency
+    # rather than an extra: without it the felix_signatures manifest silently loses the
+    # sample-level context (Engineering_Key 75/25, Insert_Over_10_bp 60/40) that the
+    # adapter's docstring promises is recorded.
+    "openpyxl==3.1.5",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +36,7 @@ dev = [
     "pandas-stubs==2.3.3.251201",
     "types-PyYAML==6.0.12.20260815",
     "types-requests==2.33.0.20260712",
+    "types-openpyxl==3.1.5.20260827",
 ]
 
 # Live CodonTransformer inference. Deliberately an extra and deliberately NOT on the

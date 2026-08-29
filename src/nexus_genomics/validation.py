@@ -21,7 +21,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from nexus_genomics.common import blake2b_256, hash_file
+from nexus_genomics.common import CONTENT_HASH_ALGORITHM, blake2b_256, hash_file
 from nexus_genomics.encoding import MAX_TOKEN, PAD_TOKEN, TOKEN_TO_LETTER
 from nexus_genomics.nexus_csv import (
     INDEX_COLUMN,
@@ -128,14 +128,83 @@ def validate_file(path: Path, *, sample_size: int = 25, seed: int = 0) -> Valida
     result.add("primary_key_column_exists", has_pk, f"looked for {INDEX_COLUMN!r}")
     if not has_pk:
         return result
-    pk = frame[INDEX_COLUMN]
-    pk_values = [str(v) for v in pk.tolist()]
+    # The initial no-arguments load proves ordinary pandas compatibility, but its inference turns
+    # an exact textual key such as ``001`` into integer ``1``. Re-read just the key as text before
+    # any identity or sidecar comparison so validation does not manufacture a mismatch.
+    pk = pd.read_csv(path, usecols=[INDEX_COLUMN], dtype={INDEX_COLUMN: "string"})[INDEX_COLUMN]
+    pk_values = pk.astype(str).tolist()
     result.add("primary_key_non_null", bool(pk.notna().all()), f"{int(pk.isna().sum())} null")
     n_dupe = int(len(pk) - pk.nunique())
     result.add(
         "primary_key_unique",
         n_dupe == 0,
         "all unique" if n_dupe == 0 else f"{n_dupe} duplicated primary key(s)",
+    )
+
+    # --- complete samples-sidecar integrity -------------------------------------------
+    sample_sidecar = samples_path(path)
+    sample_frame: pd.DataFrame | None = None
+    sample_error = ""
+    try:
+        sample_frame = pd.read_csv(sample_sidecar, dtype={INDEX_COLUMN: str})
+    except Exception as exc:
+        sample_error = f"{type(exc).__name__}: {exc}"
+
+    declared_samples_hash = manifest.get("samples_content_hash")
+    declared_samples_algorithm = manifest.get("samples_content_hash_algorithm")
+    current_samples_hash = hash_file(sample_sidecar) if sample_frame is not None else None
+    samples_hash_ok = (
+        isinstance(declared_samples_hash, str)
+        and declared_samples_algorithm == CONTENT_HASH_ALGORITHM
+        and current_samples_hash == declared_samples_hash
+    )
+    result.add(
+        "samples_sidecar_content_hash_matches",
+        samples_hash_ok,
+        (
+            f"recomputed {current_samples_hash[:16]}... vs manifest "
+            f"{declared_samples_hash[:16]}... using {declared_samples_algorithm}"
+            if current_samples_hash is not None and isinstance(declared_samples_hash, str)
+            else (
+                "required samples sidecar hash is unavailable: "
+                f"{sample_error or 'manifest fields missing'}"
+            )
+        ),
+    )
+
+    sample_ids: list[str] = []
+    if sample_frame is not None and INDEX_COLUMN in sample_frame.columns:
+        sample_ids = sample_frame[INDEX_COLUMN].astype(str).tolist()
+    declared_sample_rows = manifest.get("samples_n_rows")
+    samples_count_ok = (
+        sample_frame is not None
+        and len(sample_frame) == declared_sample_rows
+        and declared_sample_rows == manifest.get("n_samples")
+    )
+    result.add(
+        "samples_sidecar_row_count_matches_manifest",
+        samples_count_ok,
+        f"sidecar has {len(sample_frame) if sample_frame is not None else 'unreadable'} rows; "
+        f"samples_n_rows={declared_sample_rows!r}, n_samples={manifest.get('n_samples')!r}",
+    )
+    samples_unique = bool(sample_ids) and len(sample_ids) == len(set(sample_ids))
+    result.add(
+        "samples_sidecar_sample_ids_unique",
+        samples_unique,
+        "all unique"
+        if samples_unique
+        else f"{len(sample_ids) - len(set(sample_ids))} duplicate(s), or sample_id missing",
+    )
+    sample_ids_match = sample_ids == pk_values
+    result.add(
+        "samples_sidecar_sample_ids_match_table_order",
+        sample_ids_match,
+        "exact ordered equality"
+        if sample_ids_match
+        else (
+            f"table has {len(pk_values)} IDs and sidecar has {len(sample_ids)}; "
+            "order/content differs"
+        ),
     )
 
     # --- targets ----------------------------------------------------------------------
@@ -145,18 +214,57 @@ def validate_file(path: Path, *, sample_size: int = 25, seed: int = 0) -> Valida
         not missing_targets,
         "present" if not missing_targets else f"missing {missing_targets}",
     )
-    documented = manifest.get("label_semantics", {})
-    allowed = {int(k) for k in documented} if documented else None
-    if allowed is not None and not missing_targets:
+    non_integer_targets = [
+        column
+        for column in target_cols
+        if column in frame.columns and not pd.api.types.is_integer_dtype(frame[column])
+    ]
+    targets_are_integer = not missing_targets and not non_integer_targets
+    result.add(
+        "all_target_columns_integer",
+        targets_are_integer,
+        "all integer dtype"
+        if targets_are_integer
+        else f"non-integer or missing target columns: {non_integer_targets or missing_targets}",
+    )
+    documented = manifest.get("label_semantics")
+    allowed: set[int] | None = None
+    semantics_valid = True
+    if documented is not None and (not isinstance(documented, Mapping) or not documented):
+        semantics_valid = False
+        result.add(
+            "labels_only_documented_values",
+            False,
+            "label_semantics is present but does not contain a nonempty class mapping",
+        )
+    elif isinstance(documented, Mapping):
+        try:
+            allowed = {int(key) for key in documented}
+        except (TypeError, ValueError):
+            semantics_valid = False
+            result.add(
+                "labels_only_documented_values",
+                False,
+                "label_semantics contains a key that is not an integer class",
+            )
+    labels_usable = targets_are_integer and semantics_valid
+    if allowed is not None and labels_usable:
         seen_values: set[int] = set()
         for col in target_cols:
-            seen_values.update(int(v) for v in frame[col].unique())
+            seen_values.update(frame[col].unique().tolist())
         undocumented = sorted(seen_values - allowed)
         result.add(
             "labels_only_documented_values",
             not undocumented,
             f"documented {sorted(allowed)}; found {sorted(seen_values)}"
             + (f"; UNDOCUMENTED {undocumented}" if undocumented else ""),
+        )
+    if not labels_usable:
+        result.add(
+            "label_dependent_checks_skipped",
+            False,
+            "target columns are not exact integer dtype or label semantics are malformed, "
+            "so label comparisons, conflicts, class counts, and balance were not coerced",
         )
 
     # --- feature columns --------------------------------------------------------------
@@ -282,59 +390,60 @@ def validate_file(path: Path, *, sample_size: int = 25, seed: int = 0) -> Valida
     # Extracted once, not per row per column. `frame.iloc[i]` inside the loop rebuilt a
     # 1,033-element object Series for every target column of every row: 87 seconds on the
     # 13,164-row FunSoC file against 0.02 seconds for the vectorised form.
-    label_matrix = frame[target_cols].to_numpy()
-    label_of: dict[str, set[tuple[int, ...]]] = {}
-    for i, seq in enumerate(decoded):
-        key = tuple(int(v) for v in label_matrix[i])
-        label_of.setdefault(seq, set()).add(key)
-    conflicting = {s: v for s, v in label_of.items() if len(v) > 1}
-    result.add(
-        "conflicting_labels_on_identical_sequences_reported",
-        True,
-        f"{len(conflicting)} sequence(s) carry more than one distinct label vector"
-        + (
-            ""
-            if not conflicting
-            else f"; first example has labels {sorted(next(iter(conflicting.values())))}"
-        ),
-    )
-
-    # An all-zero target column cannot be learned and is indistinguishable, to a reader, from
-    # a class that genuinely never occurs. It is almost always a capped sample that dropped a
-    # class, so it fails rather than being reported.
-    all_zero = [c for c in target_cols if int(frame[c].abs().sum()) == 0]
-    result.add(
-        "every_target_column_carries_at_least_one_positive",
-        not all_zero,
-        "every target column has a non-zero value"
-        if not all_zero
-        else f"{len(all_zero)} target column(s) are entirely zero: {all_zero[:8]}",
-    )
-
-    counts: dict[str, Any] = {}
-    for col in target_cols:
-        counts[col] = {str(k): int(v) for k, v in frame[col].value_counts().items()}
-    result.stats["class_counts"] = counts
-    if len(target_cols) == 1:
-        vc = frame[target_cols[0]].value_counts()
-        result.stats["n_distinct_classes"] = len(vc)
-        # A constant target is a degenerate file. The all-zero check above only catches it
-        # when the constant happens to be 0, and reporting balance = 1.0 for a single class
-        # would describe the most useless possible dataset as perfectly balanced.
+    if labels_usable:
+        label_matrix = frame[target_cols].to_numpy()
+        label_of: dict[str, set[tuple[int, ...]]] = {}
+        for i, seq in enumerate(decoded):
+            key = tuple(label_matrix[i].tolist())
+            label_of.setdefault(seq, set()).add(key)
+        conflicting = {s: v for s, v in label_of.items() if len(v) > 1}
         result.add(
-            "a_single_target_column_has_at_least_two_classes",
-            len(vc) >= 2,
-            f"{len(vc)} distinct value(s) in {target_cols[0]!r}: {sorted(vc.index.tolist())}"
+            "conflicting_labels_on_identical_sequences_reported",
+            True,
+            f"{len(conflicting)} sequence(s) carry more than one distinct label vector"
             + (
                 ""
-                if len(vc) >= 2
-                else " -- a constant target cannot be learned and is almost always a "
-                "sampling cap that dropped every other class"
+                if not conflicting
+                else f"; first example has labels {sorted(next(iter(conflicting.values())))}"
             ),
         )
-        result.stats["class_balance_min_over_max"] = (
-            round(float(vc.min() / vc.max()), 4) if len(vc) > 1 else None
+
+        # An all-zero target column cannot be learned and is indistinguishable, to a reader,
+        # from a class that genuinely never occurs. It is almost always a capped sample that
+        # dropped a class, so it fails rather than being reported.
+        all_zero = [c for c in target_cols if int(frame[c].abs().sum()) == 0]
+        result.add(
+            "every_target_column_carries_at_least_one_positive",
+            not all_zero,
+            "every target column has a non-zero value"
+            if not all_zero
+            else f"{len(all_zero)} target column(s) are entirely zero: {all_zero[:8]}",
         )
+
+        counts: dict[str, Any] = {}
+        for col in target_cols:
+            counts[col] = {str(k): int(v) for k, v in frame[col].value_counts().items()}
+        result.stats["class_counts"] = counts
+        if len(target_cols) == 1:
+            vc = frame[target_cols[0]].value_counts()
+            result.stats["n_distinct_classes"] = len(vc)
+            # A constant target is a degenerate file. The all-zero check above only catches it
+            # when the constant happens to be 0, and reporting balance = 1.0 for a single class
+            # would describe the most useless possible dataset as perfectly balanced.
+            result.add(
+                "a_single_target_column_has_at_least_two_classes",
+                len(vc) >= 2,
+                f"{len(vc)} distinct value(s) in {target_cols[0]!r}: {sorted(vc.index.tolist())}"
+                + (
+                    ""
+                    if len(vc) >= 2
+                    else " -- a constant target cannot be learned and is almost always a "
+                    "sampling cap that dropped every other class"
+                ),
+            )
+            result.stats["class_balance_min_over_max"] = (
+                round(float(vc.min() / vc.max()), 4) if len(vc) > 1 else None
+            )
 
     result.stats["row_count"] = int(frame.shape[0])
     result.stats["column_count"] = int(frame.shape[1])
@@ -360,14 +469,14 @@ def validate_file(path: Path, *, sample_size: int = 25, seed: int = 0) -> Valida
 
     # --- round trip against the per-sample digests ------------------------------------
     result.add(
-        *_round_trip(path, frame, decoded, sample_size=sample_size, seed=seed),
+        *_round_trip(path, pk_values, decoded, sample_size=sample_size, seed=seed),
     )
     return result
 
 
 def _round_trip(
     path: Path,
-    frame: pd.DataFrame,
+    sample_ids: Sequence[str],
     decoded: Sequence[str],
     *,
     sample_size: int,
@@ -386,7 +495,7 @@ def _round_trip(
     side = samples_path(path)
     if not side.exists():
         return (name, False, f"{side.name} is missing, so no round trip is possible")
-    meta = pd.read_csv(side)
+    meta = pd.read_csv(side, dtype={INDEX_COLUMN: "string"})
     if "source_slice_blake2b" not in meta.columns:
         return (name, False, f"{side.name} has no source_slice_blake2b column")
     expected = dict(zip(meta[INDEX_COLUMN].astype(str), meta["source_slice_blake2b"], strict=True))
@@ -396,7 +505,7 @@ def _round_trip(
     picks = rng.sample(range(len(decoded)), n)
     bad: list[str] = []
     for i in picks:
-        sid = str(frame[INDEX_COLUMN].iloc[i])
+        sid = sample_ids[i]
         want = expected.get(sid)
         got = blake2b_256(decoded[i].encode("utf-8"))
         if want != got:

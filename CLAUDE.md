@@ -5,17 +5,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 `nexus-genomics` converts public genomic datasets into a supervised-learning CSV: one column
-per sequence position, integer tokens, a manifest sidecar carrying the provenance. Four
-adapters read four native formats; everything after that is one shared path.
+per sequence position, integer tokens, a manifest sidecar carrying the provenance. Five
+adapters read five native formats; everything after that is one shared path.
 
-**The load-bearing finding, which the original brief got wrong: none of the four sources is a
-natural-versus-engineered dataset.** The evidence is in `reports/source_audit.md`. Each adapter
-emits the label its source actually supports:
+**The load-bearing finding, which the original brief got wrong: none of its four original sources
+is a general natural-versus-engineered dataset as supplied.** A fifth adapter reads FELIX
+supporting information and provides a narrower recorded-event target: host-context sequence not
+introduced by that event versus sequence introduced by it. It does not relabel any original
+source. Each adapter emits only the label its source supports:
 
 | Registry key | `adapter.name` (the output filename stem) | Honest target |
 |---|---|---|
 | `codontransformer` | `codontransformer_natural_vs_optimized` | natural NCBI CDS vs CodonTransformer-generated |
 | `seqscreen` | `funsoc_pathogenicity_mechanism` | 32 FunSoC pathogenicity mechanisms, multilabel |
+| `felix_signatures` | `felix_natural_vs_engineered` | host-context sequence not introduced by the recorded event vs sequence introduced by it |
 | `felix` | `felix_guardian_part_role` | 8 genetic part roles |
 | `addgene` | `addgene_lab_attribution` | lab of origin, 1,314 classes (gated download) |
 
@@ -39,7 +42,7 @@ reads `Path("config/default.yaml")` relative to the working directory.
 ```powershell
 .venv\Scripts\python -m pip install -e ".[dev]"
 
-.venv\Scripts\python -m pytest -q                                   # 104 tests, no network
+.venv\Scripts\python -m pytest -q                                   # 203 tests, no network
 .venv\Scripts\python -m pytest tests\test_adapters.py               # one file
 .venv\Scripts\python -m pytest tests\test_adapters.py::test_the_stratified_cap_is_deterministic
 .venv\Scripts\python -m pytest -k stratified_cap -v                 # by keyword
@@ -50,7 +53,10 @@ reads `Path("config/default.yaml")` relative to the working directory.
 .venv\Scripts\python -m nexus_genomics.cli audit
 .venv\Scripts\python -m nexus_genomics.cli convert <key> --profile demo
 .venv\Scripts\python -m nexus_genomics.cli convert-all --profile demo   # or full
+.venv\Scripts\python -m nexus_genomics.cli convert-all --profile demo --out-dir outputs\strict --strict-single-target
 .venv\Scripts\python -m nexus_genomics.cli validate outputs\*.ml.csv
+.venv\Scripts\python -m nexus_genomics.cli validate outputs\strict\*.ml.csv --reports-dir reports\strict
+.venv\Scripts\python -m nexus_genomics.cli compliance --profile demo --out-dir outputs\strict
 .venv\Scripts\python -m nexus_genomics.cli reproduce <a.ml.csv> <b.ml.csv>
 .venv\Scripts\python -m nexus_genomics.cli formats
 ```
@@ -66,7 +72,7 @@ reads `Path("config/default.yaml")` relative to the working directory.
   fails the suite.
 - A `network` marker is declared (`pyproject.toml:77-79`) but **used by zero tests**. The whole
   suite is offline and needs no gated download; keep it that way.
-- This is PowerShell: chain with `;`, not `&&`. The repo is not a git repository.
+- This is PowerShell: chain with `;`, not `&&`.
 
 ## Architecture
 
@@ -74,29 +80,38 @@ Dependencies flow one way. Everything downstream of `SampleRecord` is source-agn
 everything upstream of it is source-specific and lives in `adapters/`.
 
 ```
-adapters/base.py   Adapter Protocol, Availability, LoadedSource, stable_class_index, one_hot
+adapters/base.py   Adapter Protocol, Availability, LoadedSource, stable_class_index
 adapters/*.py      native format -> SampleRecord. The ONLY source-specific code. It does no
                    cleaning, no encoding and no padding (base.py:5-7) -- those are shared, or
-                   a defect fixed in one place survives in three others
+                   a defect fixed in one place survives in four others
 common.py          SampleRecord, blake2b_256, canonical_json, StagedWrite, require_unique
 cleaning.py        Alphabet; clean_sequence -> CleanResult | Quarantined; every op counted
 encoding.py        the A=1..Z=26 cipher, EncodingMode, LengthPolicy, place()
 pipeline.py        convert(): clean -> encode -> place -> manifest -> write. The one path.
 nexus_csv.py       the writer, the two sidecars, and a reader that refuses foreign files
-validation.py      20-21 checks expressed as data; render_markdown from the same object
+projection.py      generic, lossless named-target fan-out for strict single-target tables
+run_receipt.py     atomic convert-all receipt binding profile/config/layout/table inventory
+validation.py      integrity and semantic checks as data; render_markdown from the same object
+compliance.py      executable email-contract evidence; JSON and Markdown from one object
 cli.py             Typer; every command prints its fully resolved config before doing work
 ```
 
-`cli.convert_source` (`cli.py:110-165`) loads `config/default.yaml`, hashes it as **raw text**
+`cli.convert_source` (`cli.py:168-250`) loads `config/default.yaml`, hashes it as **raw text**
 into `config_hash`, resolves the adapter from `ADAPTERS`, calls `adapter.load(raw_dir / key,
 options)`, then `pipeline.convert`, then `nexus_csv.write_nexus_csv`.
 
 Two naming facts, which have already caused one bug (`reports/self_review.md:59`): raw inputs
 live under the **registry key** (`data/raw/felix/`), outputs under the adapter's **long name**
-(`felix_guardian_part_role_demo.ml.csv`, `cli.py:136`).
+(`felix_guardian_part_role_demo.ml.csv`, `cli.py:203`).
 
 Each dataset is three files sharing a stem — `.ml.csv`, `.ml.manifest.json`, `.ml.samples.csv`.
 The table is `sample_id, target[…], position_0001 … position_1000`.
+
+Native target layout is the default and preserves the six original demo/full tables. Strict layout
+is opt-in: CodonTransformer, FELIX and FELIX signatures each keep one unsuffixed table, while
+FunSoC fans out losslessly into 32 named binary tables with bare `target`. The current registry
+generates 35 available strict demo tables rather than the brief's 34 because `felix_signatures`
+was added later. Strict shape is Nexus-conservative, never evidence of compatibility.
 
 ## Invariants that produce silently wrong data if broken
 
@@ -225,6 +240,13 @@ Each module's docstring is the full statement; these are the ones that bite from
   because alphabetical-first-N left 6 target columns all-zero (`seqscreen.py:217-228`); a capped
   file is therefore **not** distribution-representative — weight loss with
   `positives_per_funsoc_in_this_file`, never the source-list counts.
+- **felix_signatures** — this additional ACS supporting-information source has narrower,
+  event-relative sequence provenance: `1` is sequence introduced by the recorded event; `0` is
+  host-context sequence not introduced by that event, including flanks and DNA the event removed.
+  `insertion.site`, rearrangements, and point mutations are excluded because their sequence-level
+  provenance does not support either emitted class. Length alone is a strong baseline; group splits
+  use the shared `IF#####` element number. Third-party redistribution rights are not established,
+  so raw and derived files stay local.
 - **felix / GUARDIAN** — the adapter measured the corpus and refuses the binary: only 280 of
   1,670 sequences link to a detector call, and all 280 are `engineered`, so a binary file would
   contain exactly one class. Two class names contain the word "engineered"
@@ -264,7 +286,7 @@ pair; the test suite enforces two more.
 `load()` returns a `LoadedSource` whose `label_semantics` names every value that may legally
 appear in a target column and what it means — validation checks the table against it, so a
 source whose labels are not ground truth says so there, in text a reader will actually see. Set
-the right `Alphabet`, record `raw_input_hashes`, and use `stable_class_index` / `one_hot` from
+the right `Alphabet`, record `raw_input_hashes`, and use `stable_class_index` from
 `base.py` rather than re-deriving a class map. `Availability.manual_steps` is not optional
 politeness: it is the difference between "this pipeline is broken" and "this pipeline needs one
 file you fetch in a browser".
@@ -303,15 +325,15 @@ The fuller statement is `C:\Projects\qecgen\AGENTS.md`, which this project follo
 ## Known gaps
 
 - **Blocked on the Nexus team:** the real column and row ceiling (1,000 positions was chosen as a
-  safe starting point, not established), and whether a 32-column multilabel target block is
-  acceptable at all — the brief says "column", singular. If it is not, FunSoC must become 32
-  binary files or one collapsed column, and both lose information.
+  safe starting point, not established), whether native multilabel targets are accepted, and an
+  authoritative fixture. Strict mode supplies one target per table without loss, but no shape is
+  called Nexus-compatible until that fixture passes.
 - **Blocked on a download only the user can perform:** the GEAC competition files (free
-  DrivenData account plus rules acceptance), and `sb3c00398_si_001.zip`, which is the **only**
-  genuine sequence-level natural-versus-engineered ground truth found across all four sources.
-  Its HTTP 403 is a Cloudflare challenge, not a paywall, so a browser gets it and a script does
-  not. Even once it lands, what the honest *negative* class should be is an open question that
-  `reports/unresolved_questions.md:69` marks as one not to decide unilaterally.
+  DrivenData account plus rules acceptance). Addgene remains lab attribution over engineered
+  plasmids, and the raw files and every derivative may not be redistributed.
+- **Unsupported by the four original sources:** the requested general natural-versus-engineered
+  target. Strict projection cannot create it. The added FELIX-signatures dataset is narrower and
+  strongly length-confounded; it does not change the original source audit.
 - **Recorded, non-blocking:** `fine_tuned` in the CodonTransformer corpus is undocumented and
   must never be used as a target; the strided sample from the 6.08 GB Zenodo file is reproducible
   but not uniform random, because rows are grouped by organism.

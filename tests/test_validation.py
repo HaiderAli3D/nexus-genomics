@@ -14,7 +14,7 @@ import pytest
 
 from nexus_genomics.adapters.base import LoadedSource
 from nexus_genomics.cleaning import Alphabet
-from nexus_genomics.common import SampleRecord
+from nexus_genomics.common import SampleRecord, canonical_json, hash_file
 from nexus_genomics.encoding import LengthPolicy
 from nexus_genomics.nexus_csv import manifest_path, samples_path
 from nexus_genomics.pipeline import ConvertOptions, convert
@@ -53,6 +53,17 @@ def default_records() -> list[SampleRecord]:
 
 def failed(path: Path) -> list[str]:
     return [c.name for c in validate_file(path, sample_size=4).checks if not c.passed]
+
+
+def rewrite_samples(path: Path, rows: list[str], *, update_hash: bool) -> None:
+    """Rewrite a synthetic samples sidecar and optionally make its byte hash self-consistent."""
+    side = samples_path(path)
+    side.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    if update_hash:
+        companion = manifest_path(path)
+        payload = json.loads(companion.read_text(encoding="utf-8"))
+        payload["manifest"]["samples_content_hash"] = hash_file(side)
+        companion.write_text(canonical_json(payload), encoding="utf-8")
 
 
 def test_a_clean_file_passes_everything(tmp_path: Path) -> None:
@@ -118,6 +129,19 @@ def test_an_undocumented_label_value_is_caught(tmp_path: Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     names = failed(path)
     assert "labels_only_documented_values" in names
+
+
+def test_an_empty_present_label_map_fails_documented_value_validation(tmp_path: Path) -> None:
+    """An empty declared vocabulary cannot document any observed categorical target."""
+    path = build(tmp_path, default_records())
+    companion = manifest_path(path)
+    payload = json.loads(companion.read_text(encoding="utf-8"))
+    payload["manifest"]["label_semantics"] = {}
+    companion.write_text(canonical_json(payload), encoding="utf-8")
+
+    names = failed(path)
+    assert "labels_only_documented_values" in names
+    assert "label_dependent_checks_skipped" in names
 
 
 def test_an_all_zero_target_column_is_caught(tmp_path: Path) -> None:
@@ -193,6 +217,27 @@ def test_a_non_integer_feature_cell_is_reported_not_crashed_on(tmp_path: Path) -
     names = failed(path)
     assert "all_position_columns_integer" in names
     assert "remaining_checks_skipped" in names
+
+
+def test_a_non_integer_target_cell_is_reported_without_coercion_or_a_crash(
+    tmp_path: Path,
+) -> None:
+    """``int(1.5)`` either crashes or fabricates class 1; neither is validation."""
+    path = build(tmp_path, default_records())
+    lines = path.read_text(encoding="utf-8").splitlines()
+    cells = lines[1].split(",")
+    cells[1] = "1.5"
+    lines[1] = ",".join(cells)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    result = validate_file(path, sample_size=4)
+    names = [check.name for check in result.checks]
+    failed_names = [check.name for check in result.checks if not check.passed]
+
+    assert "all_target_columns_integer" in failed_names
+    assert "label_dependent_checks_skipped" in failed_names
+    assert "content_hash_matches_the_table_on_disk" in names
+    assert "sampled_rows_decode_back_to_their_source_sequence" in names
 
 
 def test_a_padding_failure_stops_the_decode_dependent_checks(tmp_path: Path) -> None:
@@ -278,3 +323,138 @@ def test_the_samples_sidecar_covers_every_row(tmp_path: Path) -> None:
     table = path.read_text(encoding="utf-8").splitlines()[1:]
     side = samples_path(path).read_text(encoding="utf-8").splitlines()[1:]
     assert len(table) == len(side) == 4
+
+
+def test_numeric_looking_sample_ids_keep_their_exact_text_during_validation(
+    tmp_path: Path,
+) -> None:
+    """Default pandas inference must not collapse ``001`` and break an exact sidecar join."""
+    path = build(
+        tmp_path,
+        [
+            SampleRecord("001", "ACGT", (0,), "t", {}),
+            SampleRecord("002", "TGCA", (1,), "t", {}),
+        ],
+    )
+
+    checks = {check.name: check for check in validate_file(path).checks}
+
+    assert checks["samples_sidecar_sample_ids_match_table_order"].passed
+    assert checks["primary_key_unique"].passed
+
+
+def test_numeric_looking_sample_ids_remain_distinct_in_the_round_trip(
+    tmp_path: Path,
+) -> None:
+    """The semantic spot check must not compare ``001`` against metadata for ``1``.
+
+    The complete sidecar hash protects the bytes, but pandas inference in the separate
+    sampled round trip used to collapse both keys to integer 1 and select the wrong source
+    digest. That creates a false corruption report for a valid pair of exact textual IDs.
+    """
+    path = build(
+        tmp_path,
+        [
+            SampleRecord("001", "ACGT", (0,), "t", {}),
+            SampleRecord("1", "TGCA", (1,), "t", {}),
+        ],
+    )
+
+    checks = {check.name: check for check in validate_file(path, sample_size=2).checks}
+
+    assert checks["sampled_rows_decode_back_to_their_source_sequence"].passed
+
+
+def test_a_duplicate_samples_sidecar_id_is_rejected_even_with_a_matching_hash(
+    tmp_path: Path,
+) -> None:
+    """A digest proves bytes, not that the sidecar key remains a one-to-one join key."""
+    path = build(tmp_path, default_records())
+    rows = samples_path(path).read_text(encoding="utf-8").splitlines()
+    second = rows[2].split(",")
+    second[0] = "s1"
+    rows[2] = ",".join(second)
+    rewrite_samples(path, rows, update_hash=True)
+
+    names = failed(path)
+    assert "samples_sidecar_sample_ids_unique" in names
+    assert "samples_sidecar_sample_ids_match_table_order" in names
+
+
+def test_a_missing_samples_sidecar_row_is_rejected_even_with_a_matching_hash(
+    tmp_path: Path,
+) -> None:
+    """A table row without provenance cannot participate in a deterministic audit."""
+    path = build(tmp_path, default_records())
+    rows = samples_path(path).read_text(encoding="utf-8").splitlines()
+    rewrite_samples(path, rows[:-1], update_hash=True)
+
+    names = failed(path)
+    assert "samples_sidecar_row_count_matches_manifest" in names
+    assert "samples_sidecar_sample_ids_match_table_order" in names
+
+
+def test_an_extra_samples_sidecar_row_is_rejected_even_with_a_matching_hash(
+    tmp_path: Path,
+) -> None:
+    """Extra provenance silently fans out a downstream join just like a duplicate table key."""
+    path = build(tmp_path, default_records())
+    rows = samples_path(path).read_text(encoding="utf-8").splitlines()
+    extra = rows[-1].split(",")
+    extra[0] = "s-extra"
+    rows.append(",".join(extra))
+    rewrite_samples(path, rows, update_hash=True)
+
+    names = failed(path)
+    assert "samples_sidecar_row_count_matches_manifest" in names
+    assert "samples_sidecar_sample_ids_match_table_order" in names
+
+
+def test_reordered_samples_sidecar_ids_are_rejected_even_with_a_matching_hash(
+    tmp_path: Path,
+) -> None:
+    """The contract is ordered equality, so row-position metadata cannot drift between IDs."""
+    path = build(tmp_path, default_records())
+    rows = samples_path(path).read_text(encoding="utf-8").splitlines()
+    rows[1], rows[2] = rows[2], rows[1]
+    rewrite_samples(path, rows, update_hash=True)
+
+    assert "samples_sidecar_sample_ids_match_table_order" in failed(path)
+
+
+def test_a_stale_samples_sidecar_from_another_table_is_rejected(tmp_path: Path) -> None:
+    """A coherent old sidecar beside a new table is the partial-replacement failure mode."""
+    current = build(tmp_path / "current", default_records())
+    stale = build(
+        tmp_path / "stale",
+        [
+            SampleRecord("x1", "ACGT", (0,), "t", {}),
+            SampleRecord("x2", "ACGTAC", (1,), "t", {}),
+            SampleRecord("x3", "TTTT", (0,), "t", {}),
+            SampleRecord("x4", "GGGGCC", (1,), "t", {}),
+        ],
+    )
+    samples_path(current).write_bytes(samples_path(stale).read_bytes())
+
+    names = failed(current)
+    assert "samples_sidecar_content_hash_matches" in names
+    assert "samples_sidecar_sample_ids_match_table_order" in names
+
+
+def test_tampering_an_unsampled_metadata_row_is_always_caught_by_the_full_hash(
+    tmp_path: Path,
+) -> None:
+    """Random semantic spot checks cannot probabilistically protect the complete sidecar."""
+    path = build(tmp_path, default_records())
+    rows = samples_path(path).read_text(encoding="utf-8").splitlines()
+    header = rows[0].split(",")
+    original_length = header.index("original_length")
+    first = rows[1].split(",")
+    first[original_length] = "999"
+    rows[1] = ",".join(first)
+    rewrite_samples(path, rows, update_hash=False)
+
+    result = validate_file(path, sample_size=1, seed=0)
+    checks = {check.name: check for check in result.checks}
+    assert not checks["samples_sidecar_content_hash_matches"].passed
+    assert checks["sampled_rows_decode_back_to_their_source_sequence"].passed

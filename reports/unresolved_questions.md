@@ -45,28 +45,48 @@ carries `"nexus_compatibility": "NOT VERIFIED"`.
 
 ## Blocking — needs a file only you can fetch
 
-### 4. The FELIX engineering-signature FASTA
+### 4. ~~The FELIX engineering-signature FASTA~~ — RESOLVED 2026-08-29
 
-This is the **only genuine sequence-level natural-versus-engineered ground truth** found
-across all four sources. It is free; the `HTTP 403` is a Cloudflare bot challenge
-(`Cf-Mitigated: challenge`), not a paywall, so a browser gets it and a script does not.
+**Supplied and converted.** `outputs/felix_natural_vs_engineered_{demo,full}.ml.csv` now carries
+the narrower event-relative target supported by the SI: class 0 is host-context sequence not
+introduced by the recorded event, and class 1 is sequence introduced by that event. It is not a
+general natural-versus-engineered benchmark. Full schema and reasoning are in
+`reports/source_audit.md` §1b.
 
-1. Open <https://pubs.acs.org/doi/10.1021/acssynbio.3c00398?goto=supporting-info>
-2. Let the Cloudflare interstitial clear; click the link rendered as *sifile1 - zip file*
-3. Save to `data\raw\felix\sb3c00398_si_001.zip`
+Fresh full output contains 315 rows (164 class 0 / 151 class 1) and records a length-only baseline
+of 0.7587. Twenty records are excluded as unsupported, including 8 `insertion.site` records; 2
+malformed FASTA records are quarantined.
 
-It contains an XLSX of sample metadata, a CSV mapping sample IDs to engineering-signature IDs,
-and a FASTA of the 1,004 engineering-signature sequences (234 unique elements).
+**Correction, found by a pre-email adversarial review (2026-08-29):** the element-type parser
+originally read only the token immediately after a signature's length marker
+(`..._861bp_plasmid.element_...`). Six of the 335 elements carry an extra descriptor in that slot
+before the real type (`..._168bp_CDSpartial_insertion_...`, or an inline indel description), so
+the parser returned the descriptor and wrongly excluded a genuinely classifiable record as
+unsupported. It never mislabelled a record into the wrong class — the failure was exclusion, not
+mislabelling — but it did mean the shipped file undercounted both classes (309 rows, 26 excluded,
+where the source actually supports 315 rows, 20 excluded). Fixed by scanning every token after the
+length marker for a recognised type keyword rather than assuming it is the very next one; see
+`adapters/felix_signatures.py`'s `_element_type` and the two regression tests added to
+`tests/test_felix_signatures.py`.
 
-**The XLSX and CSV column headers have not been observed by anyone.** The adapter will read
-the FASTA — whose shape is fixed by the format — and refuse the other two until their real
-headers are seen. Guessing a schema is the worst available error here.
+Corrections to what this section previously assumed:
 
-Open question even once the ZIP arrives: what the honest **negative** class is. The signatures
-are all engineered elements. A defensible negative would be sequence sampled from the matched
-natural host reference genomes, but that needs a documented sampling rule (matched length
-distribution, matched GC content, matched assembly source) or the model learns a batch effect
-rather than engineering. **This decision should not be made unilaterally.**
+- The FASTA holds **335 records**, not 1,004. The 1,004 figure is the number of rows in the
+  *sample-signature CSV*, which maps 75 samples onto 340 elements.
+- Class 0 did not need constructing. The SI contains host-context sequence not introduced by the
+  recorded event — `_flank1`/`_flank2` records and regions the event removed — from the same
+  samples and sequencing as class 1. This reduces the batch effect a reference-genome comparison
+  would introduce, which is why §10 stays rejected; it is not a global naturalness claim.
+- The judgement that *did* have to be made was which element types are honestly labellable.
+  Rearrangements, point mutations, and `insertion.site` records are excluded rather than assigned
+  a class.
+
+**What remains genuinely open:** the set is small and **length-confounded**. Padding makes length
+visible, and the freshly measured length-only baseline is published in each manifest. That is a
+property of the source. It is useful as a shape demonstration; as a benchmark it is meaningful
+only when results are quoted against `length_only_baseline_accuracy` and split by the shared
+element group. Growing it would require an explicit, documented sampling design rather than a
+silent reference-genome negative class.
 
 ### 5. The GEAC competition files
 

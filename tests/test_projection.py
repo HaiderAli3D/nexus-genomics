@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -33,6 +35,11 @@ def _source(
         raw_input_hashes={"fixture.txt": "abc123"},
         sample_metadata_fields=("row",),
     )
+
+
+def _literal_target_hash(pairs_json: str) -> str:
+    """Hand-specified pair JSON keeps expected projection hashes independent of production."""
+    return hashlib.blake2b(pairs_json.encode("utf-8"), digest_size=32).hexdigest()
 
 
 def test_a_single_target_source_uses_the_original_source_and_an_empty_slug() -> None:
@@ -73,6 +80,23 @@ def test_multilabel_values_are_split_into_named_single_target_sources() -> None:
     ]
     assert all(item.source.n_targets == 1 for item in projections)
     assert all(item.source.target_names == () for item in projections)
+    expected_contract = {
+        "source_target_names": ["Beta / Toxin++", "Toxín"],
+        "source_target_slugs": ["beta_toxin", "tox_n"],
+        "source_target_hashes": [
+            _literal_target_hash('[["sample-0",1],["sample-1",0]]'),
+            _literal_target_hash('[["sample-0",0],["sample-1",1]]'),
+        ],
+        "source_target_hash_algorithm": "blake2b-256",
+        "source_row_count": 2,
+    }
+    source_names = cast(list[str], expected_contract["source_target_names"])
+    source_slugs = cast(list[str], expected_contract["source_target_slugs"])
+    for projection in projections:
+        metadata = projection.source.manifest_extra["target_projection"]
+        assert {key: metadata[key] for key in expected_contract} == expected_contract
+        assert metadata["original_target_name"] == source_names[projection.index]
+        assert metadata["original_target_slug"] == source_slugs[projection.index]
 
 
 def test_projection_preserves_provenance_without_mutating_source_metadata() -> None:
@@ -96,13 +120,21 @@ def test_projection_preserves_provenance_without_mutating_source_metadata() -> N
     assert first.alphabet is source.alphabet
     assert first.raw_input_hashes is source.raw_input_hashes
     assert first.sample_metadata_fields == source.sample_metadata_fields
-    assert first.manifest_extra == {
-        "existing": {"kept": True},
-        "target_projection": {
-            "original_target_index": 0,
-            "original_target_name": "First",
-            "original_target_count": 2,
-        },
+    metadata = first.manifest_extra["target_projection"]
+    assert first.manifest_extra["existing"] == {"kept": True}
+    assert metadata == {
+        "original_target_index": 0,
+        "original_target_name": "First",
+        "original_target_slug": "first",
+        "original_target_count": 2,
+        "source_target_names": ["First", "Second"],
+        "source_target_slugs": ["first", "second"],
+        "source_target_hashes": [
+            _literal_target_hash('[["sample-0",1]]'),
+            _literal_target_hash('[["sample-0",0]]'),
+        ],
+        "source_target_hash_algorithm": "blake2b-256",
+        "source_row_count": 1,
     }
     assert first.manifest_extra is not source.manifest_extra
     assert source.manifest_extra == {"existing": {"kept": True}}

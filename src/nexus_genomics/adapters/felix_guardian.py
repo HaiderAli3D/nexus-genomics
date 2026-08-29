@@ -63,21 +63,19 @@ TARBALL_NAME: Final = "midoe-main.tar.gz"
 SI_ZIP_NAME: Final = "sb3c00398_si_001.zip"
 
 _SI_STEPS: Final = f"""\
-The only genuine sequence-level natural-vs-engineered ground truth in this source is the
-ACS Supporting Information, which is FREE but sits behind a Cloudflare bot challenge
-(HTTP 403 with 'Cf-Mitigated: challenge' to any script -- it is not a paywall and needs no
-subscription). To supply it:
+The genuine sequence-level natural-versus-engineered ground truth is NOT in this repository.
+It lives in the ACS Supporting Information and is handled by a separate adapter,
+`felix_signatures` (nexus_genomics/adapters/felix_signatures.py), which reads all three of
+its files and explains why a deletion's sequence is NATURAL. The SI is FREE but sits behind
+a Cloudflare bot challenge (HTTP 403 with 'Cf-Mitigated: challenge' to any script), so it
+needs a browser:
 
   1. Open https://pubs.acs.org/doi/10.1021/acssynbio.3c00398?goto=supporting-info
      in a normal desktop browser and let the Cloudflare interstitial clear.
   2. Under 'Supporting Information', click the link rendered as 'sifile1 - zip file'.
-  3. Save it as data/raw/felix/{SI_ZIP_NAME}
+  3. Save it as data/raw/felix_signatures/{SI_ZIP_NAME}
 
-It contains an XLSX of sample metadata, a CSV mapping sample IDs to engineering-signature
-IDs, and a FASTA of the 1,004 engineering-signature sequences headed by signature ID.
-The XLSX/CSV column headers have NOT been observed by anyone here, so this adapter will
-read the FASTA (whose shape is fixed by the format) and refuse the other two until their
-real headers are seen, rather than guess a schema.\
+Then run:  python -m nexus_genomics.cli convert felix_signatures --profile full\
 """
 
 

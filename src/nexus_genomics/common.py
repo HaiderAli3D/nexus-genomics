@@ -1,6 +1,6 @@
 """The internal representation every adapter produces, and the primitives around it.
 
-One dataclass and a handful of functions, so that the four adapters cannot each invent
+One dataclass and a handful of functions, so that the five adapters cannot each invent
 their own idea of what a sample is. Everything downstream of :class:`SampleRecord` is
 source-agnostic; everything upstream of it is source-specific and lives in ``adapters/``.
 """

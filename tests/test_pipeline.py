@@ -218,3 +218,27 @@ def test_rerunning_with_the_same_config_reproduces_the_content_hash(tmp_path: Pa
         for p in (first, second)
     }
     assert len(stamps) >= 1  # the timestamp may differ; the table bytes may not
+
+
+def test_a_zero_window_cap_is_refused_instead_of_selecting_the_last_window() -> None:
+    """``cap - 1`` turns zero into ``-1`` and silently keeps no rows with false accounting."""
+    with pytest.raises(ValueError, match="greater than zero"):
+        ConvertOptions(max_windows_per_sample=0)
+
+
+def test_a_negative_window_cap_is_refused_instead_of_slicing_from_the_end() -> None:
+    """Negative Python slices are valid syntax and therefore especially dangerous here."""
+    with pytest.raises(ValueError, match="greater than zero"):
+        ConvertOptions(max_windows_per_sample=-2)
+
+
+def test_a_boolean_window_cap_is_refused_instead_of_becoming_one() -> None:
+    """Booleans subclass integers, but ``True`` is not an honest configured window count."""
+    with pytest.raises(TypeError, match="non-boolean integer"):
+        ConvertOptions(max_windows_per_sample=True)
+
+
+def test_none_and_positive_integer_window_caps_remain_supported() -> None:
+    """The validation boundary must retain both documented valid forms exactly."""
+    assert ConvertOptions(max_windows_per_sample=None).max_windows_per_sample is None
+    assert ConvertOptions(max_windows_per_sample=3).max_windows_per_sample == 3

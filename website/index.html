@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Five sources, source-supported targets — nexus-genomics</title>
+<meta name="description" content="None of four original genomic sources supplies a general natural-versus-engineered target; a fifth supplies a narrower recorded-event contrast.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a class="brand" href="#hero">nexus&#8209;genomics</a>
+    <button class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="siteNav" aria-label="Toggle navigation">
+      <span></span><span></span><span></span>
+    </button>
+    <nav class="site-nav" id="siteNav" aria-label="Section navigation">
+      <a href="#method" data-nav>Method</a>
+      <a href="#addgene" data-nav>Addgene</a>
+      <a href="#felix" data-nav>FELIX</a>
+      <a href="#felix-signatures" data-nav>FELIX SI</a>
+      <a href="#seqscreen" data-nav>SeqScreen</a>
+      <a href="#codontransformer" data-nav>CodonTransformer</a>
+      <a href="#comparison" data-nav>Compare</a>
+      <a href="#sources" data-nav>Sources</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <section id="hero" class="hero">
+    <div class="wrap">
+      <p class="eyebrow">A source audit of four original datasets and one added source</p>
+      <h1>Four datasets were called<br><span class="hero-highlight">&ldquo;natural vs. engineered.&rdquo;</span><br>None supplies that general target.</h1>
+      <p class="hero-lede">
+        That's a bold claim, so this page shows the work. Rather than force a label onto data
+        that doesn't support it, each dataset was re-targeted to what it genuinely measures.
+        A fifth FELIX Supporting Information source supplies a narrower recorded-event contrast,
+        not a general benchmark. No natural/engineered column was invented where none exists.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#method">See the method</a>
+        <a class="btn btn-ghost" href="#felix-signatures">See the narrower contrast</a>
+      </div>
+      <ul class="stat-strip" aria-label="Summary">
+        <li><span class="stat-strip-num">5</span><span class="stat-strip-label">sources registered</span></li>
+        <li><span class="stat-strip-num">4</span><span class="stat-strip-label">original claims unsupported</span></li>
+        <li><span class="stat-strip-num">1</span><span class="stat-strip-label">narrow event contrast</span></li>
+        <li><span class="stat-strip-num">0</span><span class="stat-strip-label">fabricated labels</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="method" class="section method">
+    <div class="wrap wrap-narrow">
+      <p class="kicker">Method</p>
+      <h2>How each claim was checked</h2>
+      <p>
+        Every dataset was read from its primary source &mdash; the raw files, the schema, the
+        paper that published it &mdash; not from the brief's description of it. Each finding was
+        then handed to an independent reviewer whose only job was to try to refute it.
+      </p>
+      <div class="method-grid">
+        <div class="method-card">
+          <span class="method-num">5</span>
+          <span class="method-label">source adapters</span>
+        </div>
+        <div class="method-card">
+          <span class="method-num">4</span>
+          <span class="method-label">available locally</span>
+        </div>
+        <div class="method-card">
+          <span class="method-num">35</span>
+          <span class="method-label">strict demo tables</span>
+        </div>
+        <div class="method-card">
+          <span class="method-num">0</span>
+          <span class="method-label">Nexus acceptance claims</span>
+        </div>
+      </div>
+      <p class="method-note">
+        The same test is applied to every source, uniformly: <em>does a natural class exist here
+        at all? Is the label
+        ground truth, or somebody's prediction? Does the field actually mean what its name
+        suggests?</em>
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================= ADDGENE ============================= -->
+  <section id="addgene" class="section dataset dataset--reframed">
+    <div class="wrap wrap-narrow">
+      <div class="dataset-head">
+        <span class="badge badge--reframed">Reframed</span>
+        <h2>Addgene &amp; the Genetic Engineering Attribution Challenge</h2>
+      </div>
+
+      <p class="dataset-lede">
+        Every sequence in this corpus is an engineered plasmid; there's no natural class in it
+        to compare against. It can't be &ldquo;natural vs. engineered&rdquo; because 100% of it
+        is the &ldquo;engineered&rdquo; side. It was converted to <strong>lab-of-origin
+        attribution</strong> instead (1,314 lab classes) &mdash; that's the label DrivenData's
+        own competition actually scores on.
+      </p>
+
+      <div class="stat-row">
+        <div class="stat">
+          <span class="stat-num">1,314</span>
+          <span class="stat-label">lab-of-origin classes</span>
+          <span class="stat-src">train_labels.csv header</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">63,017</span>
+          <span class="stat-label">labelled plasmids</span>
+          <span class="stat-src">train_values.csv rows</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">13.15%</span>
+          <span class="stat-label">pooled &ldquo;Unknown Engineered&rdquo;</span>
+          <span class="stat-src">8,286 of 63,017 rows</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">2,438</span>
+          <span class="stat-label">labs behind that pool</span>
+          <span class="stat-src">&lt;10 deposits each</span>
+        </div>
+      </div>
+
+      <div class="before-after">
+        <div class="ba-col ba-before">
+          <span class="ba-tag">The brief called it</span>
+          <p>Natural vs. engineered plasmids</p>
+        </div>
+        <div class="ba-col ba-after">
+          <span class="ba-tag">It actually measures</span>
+          <p><code>lab_id</code> &mdash; lab of origin, 1,314 classes</p>
+        </div>
+      </div>
+
+      <blockquote class="pull-quote">
+        Every sequence here is an engineered Addgene plasmid. There is no natural class and
+        there never was one.
+      </blockquote>
+
+      <details class="evidence">
+        <summary>See the evidence: what &ldquo;Unknown Engineered&rdquo; really means</summary>
+        <p>
+          <code>I7FXTVDP</code> is the pooled &ldquo;Unknown Engineered&rdquo; class covering
+          8,286 rows (13.15%) from 2,438 labs that each made fewer than ten deposits. It sounds
+          like it might mean unlabelled, or natural &mdash; it doesn't. It means unknown
+          <em>laboratory</em>, still engineered. Reading it as &ldquo;unknown or natural&rdquo;
+          would be exactly the kind of fabricated natural class this project is organized to
+          avoid.
+        </p>
+      </details>
+
+      <div class="caveat">
+        <strong>Worth knowing:</strong> the source files are gated behind a free DrivenData
+        account and acceptance of the competition rules, which explicitly prohibit
+        redistributing the data or anything derived from it. Outputs stay on the machine that
+        generated them.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== FELIX =============================== -->
+  <section id="felix" class="section dataset dataset--reframed">
+    <div class="wrap wrap-narrow">
+      <div class="dataset-head">
+        <span class="badge badge--reframed">Reframed</span>
+        <h2>IARPA FELIX / GUARDIAN</h2>
+      </div>
+
+      <p class="dataset-lede">
+        This is detector output, not ground truth &mdash; seven automated agents' predictions,
+        not verified biology. And at the sequence level, only 280 of 1,670 sequences link to
+        any call at all, and every one of those 280 is labeled &ldquo;engineered.&rdquo; A
+        binary file built from this would have exactly one class in it, which tells a model
+        nothing. It was converted to <strong>genetic part role</strong> instead (8 classes:
+        promoter, CDS, origin of replication, and others) &mdash; the annotation that's
+        actually reliable in the data.
+      </p>
+
+      <div class="stat-row">
+        <div class="stat">
+          <span class="stat-num">1,670</span>
+          <span class="stat-label">sequences with real DNA</span>
+          <span class="stat-src">1,266,189 bp, parsed from all 340 files</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">257 / 250</span>
+          <span class="stat-label">natural / engineered, sample level</span>
+          <span class="stat-src">looks balanced &mdash; until you go one level deeper</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">280 of 1,670</span>
+          <span class="stat-label">sequences link to any detector call</span>
+          <span class="stat-src">the rest have nothing to attach a label to</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">280 of 280</span>
+          <span class="stat-label">of those are &ldquo;engineered&rdquo;</span>
+          <span class="stat-src">one class, at the sequence level</span>
+        </div>
+      </div>
+
+      <div class="before-after">
+        <div class="ba-col ba-before">
+          <span class="ba-tag">The brief called it</span>
+          <p>Natural vs. engineered, via the <code>engineered</code> field</p>
+        </div>
+        <div class="ba-col ba-after">
+          <span class="ba-tag">It actually measures</span>
+          <p><code>part_role</code> &mdash; 8-class genetic part annotation</p>
+        </div>
+      </div>
+
+      <blockquote class="pull-quote">
+        A detector that finds nothing engineered emits no feature, so there is nothing for a
+        negative to attach to.
+      </blockquote>
+
+      <details class="evidence">
+        <summary>See the evidence: sample-level balance vs. sequence-level collapse</summary>
+        <p>
+          At sample level the corpus looks evenly split (natural 257 / engineered 250). That
+          balance evaporates at the sequence level: only 280 of 1,670 sequences can be linked
+          to a detector call at all, and all 280 of those calls say &ldquo;engineered.&rdquo;
+          Two of the eight part-role classes are literally named
+          <code>engineered_region</code> and <code>engineered_tag</code> &mdash; but those are
+          part types, not a verdict on the organism. Treating them as a binary &ldquo;is this
+          engineered&rdquo; label is exactly the fabrication this project exists to avoid.
+        </p>
+      </details>
+
+      <div class="caveat">
+        <strong>Worth knowing:</strong> the <code>engineered</code> field is detector output
+        from seven agents that disagree with each other, not experimentally verified biology.
+        It is treated as a prediction, never as ground truth.
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================= FELIX SIGNATURES ========================= -->
+  <section id="felix-signatures" class="section dataset dataset--confirmed">
+    <div class="wrap wrap-narrow">
+      <div class="dataset-head">
+        <span class="badge badge--confirmed">Narrow event contrast</span>
+        <h2>FELIX Supporting Information signatures</h2>
+      </div>
+
+      <p class="dataset-frame">A fifth source added after the four-source audit.</p>
+
+      <p class="dataset-lede">
+        The Supporting Information records sequences associated with specific engineering
+        events. It supports an event-relative distinction: <strong>host-context sequence not
+        introduced by the recorded event</strong> versus <strong>sequence introduced by that
+        event</strong>. That is narrower than a general natural-versus-engineered benchmark and
+        must not be presented as one.
+      </p>
+
+      <div class="stat-row">
+        <div class="stat">
+          <span class="stat-num">309</span>
+          <span class="stat-label">labelled rows in the full output</span>
+          <span class="stat-src">163 class 0 &middot; 146 class 1</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">26</span>
+          <span class="stat-label">unsupported records excluded</span>
+          <span class="stat-src">includes all 8 <code>insertion.site</code> records</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">2</span>
+          <span class="stat-label">malformed FASTA records quarantined</span>
+          <span class="stat-src">missing a header <code>&gt;</code>, not guessed at</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">0.754</span>
+          <span class="stat-label">length-only baseline accuracy</span>
+          <span class="stat-src">the confounder to quote alongside any result</span>
+        </div>
+      </div>
+
+      <div class="before-after">
+        <div class="ba-col ba-before">
+          <span class="ba-tag">Unsupported shortcut</span>
+          <p>Every &ldquo;engineering signature&rdquo; is engineered sequence</p>
+        </div>
+        <div class="ba-col ba-after">
+          <span class="ba-tag">The source supports</span>
+          <p><code>0</code> not introduced by this event &middot; <code>1</code> introduced by it</p>
+        </div>
+      </div>
+
+      <blockquote class="pull-quote">
+        Class 0 is an event-relative provenance statement, not a global claim that a sequence
+        is natural or untouched.
+      </blockquote>
+
+      <details class="evidence">
+        <summary>See the evidence: which element types can be labelled</summary>
+        <p>
+          Insertions, plasmid elements and plasmids supply introduced sequence. Flanks and
+          sequence removed by a deletion are host context not introduced by that recorded event.
+          Rearrangements, point mutations and <code>insertion.site</code> records are excluded
+          because the source does not establish either emitted sequence-level provenance class.
+        </p>
+      </details>
+
+      <div class="caveat">
+        <strong>Worth knowing:</strong> the set is small and strongly length-confounded. The
+        manifest publishes a length-only baseline, and evaluation should group records by the
+        shared FELIX element number. Third-party redistribution rights are not established, so
+        raw and derived files stay local.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================= SEQSCREEN ============================= -->
+  <section id="seqscreen" class="section dataset dataset--reframed">
+    <div class="wrap wrap-narrow">
+      <div class="dataset-head">
+        <span class="badge badge--reframed">Reframed</span>
+        <h2>SeqScreen &amp; FunSoC</h2>
+      </div>
+
+      <p class="dataset-lede">
+        This is a screening pipeline, not a labelled dataset. &ldquo;Sequence of concern&rdquo;
+        means &ldquo;might be pathogenic,&rdquo; which is a completely different axis from
+        &ldquo;was engineered&rdquo; &mdash; most flagged sequences are natural toxins and
+        virulence factors. It was converted to <strong>32 pathogenicity-mechanism labels</strong>
+        instead (multi-label, one per mechanism).
+      </p>
+
+      <div class="stat-row">
+        <div class="stat">
+          <span class="stat-num">32</span>
+          <span class="stat-label">FunSoC labels</span>
+          <span class="stat-src">multilabel, positive-only</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">0</span>
+          <span class="stat-label">mentions of &ldquo;synthetic construct&rdquo;</span>
+          <span class="stat-src">or &ldquo;wild-type,&rdquo; or &ldquo;provenance&rdquo; &mdash; in the source paper</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">32630</span>
+          <span class="stat-label">the one decoy signal</span>
+          <span class="stat-src">NCBI taxid for &ldquo;synthetic construct&rdquo;</span>
+        </div>
+      </div>
+
+      <div class="before-after">
+        <div class="ba-col ba-before">
+          <span class="ba-tag">The brief called it</span>
+          <p>Natural vs. engineered, via &ldquo;sequence of concern&rdquo;</p>
+        </div>
+        <div class="ba-col ba-after">
+          <span class="ba-tag">It actually measures</span>
+          <p>32 pathogenicity mechanisms (FunSoC), multilabel</p>
+        </div>
+      </div>
+
+      <blockquote class="pull-quote">
+        &ldquo;Sequence of concern&rdquo; does not mean &ldquo;engineered.&rdquo; The
+        overwhelming majority of sequences carrying one are entirely natural toxins, adhesins
+        and virulence factors.
+      </blockquote>
+
+      <details class="evidence">
+        <summary>See the evidence: the one field that looks like an engineering signal</summary>
+        <p>
+          The output column <code>vbeo == 's'</code> is the only field that resembles an
+          engineering flag &mdash; and it's a decoy. It fires when a read's taxid falls under
+          NCBI &ldquo;synthetic construct&rdquo; (taxid 32630), which flags cloning vectors and
+          artefact GenBank records, not engineered pathogens. An engineered pathogen gene hits
+          its natural homolog and is never flagged by it. SeqScreen is a pipeline that
+          <em>produces</em> annotations; it does not ship provenance labels of any kind.
+        </p>
+      </details>
+
+      <div class="caveat">
+        <strong>Worth knowing:</strong> FunSoC labels are positive-unlabelled. A <code>0</code>
+        means &ldquo;not a curated positive,&rdquo; not &ldquo;verified negative.&rdquo;
+        Treating zeros as true negatives will overstate precision.
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================= CODONTRANSFORMER ========================= -->
+  <section id="codontransformer" class="section dataset dataset--confirmed">
+    <div class="wrap wrap-narrow">
+      <div class="dataset-head">
+        <span class="badge badge--confirmed">Narrowly supported</span>
+        <h2>CodonTransformer</h2>
+      </div>
+
+      <p class="dataset-frame">A matched natural-CDS versus one-generator artifact detector.</p>
+
+      <p class="dataset-lede">
+        Each pair is the same protein, once as a natural NCBI coding sequence and once as
+        CodonTransformer's codon-optimized rewrite. This supports detection of this model's
+        output on its published organism slice; it is not general engineered-sequence ground
+        truth.
+      </p>
+
+      <div class="stat-row">
+        <div class="stat">
+          <span class="stat-num">622,915</span>
+          <span class="stat-label">matched natural / generated pairs</span>
+          <span class="stat-src">same protein, same organism, per row</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">73&ndash;94%</span>
+          <span class="stat-label">nucleotide identity, median 81%</span>
+          <span class="stat-src">measured over the 145 untruncated demo pairs</span>
+        </div>
+        <div class="stat">
+          <span class="stat-num">3 / 9</span>
+          <span class="stat-label">organisms shipped (demo / full)</span>
+          <span class="stat-src">of 17 the model was fine-tuned on &mdash; Homo sapiens is 36% of the full file</span>
+        </div>
+      </div>
+
+      <div class="before-after before-after--match">
+        <div class="ba-col ba-before">
+          <span class="ba-tag">The brief called it</span>
+          <p>General natural vs. engineered</p>
+        </div>
+        <div class="ba-match-mark" aria-hidden="true">=</div>
+        <div class="ba-col ba-after">
+          <span class="ba-tag">It actually measures</span>
+          <p><code>target</code>: 0 natural NCBI CDS &middot; 1 output from one named generator</p>
+        </div>
+      </div>
+
+      <blockquote class="pull-quote">
+        Not a general engineered-sequence detector &mdash; one generator, identical proteins,
+        and only 9 organisms in the shipped full file.
+      </blockquote>
+
+      <details class="evidence">
+        <summary>See the evidence: why the identity spread is the signal, not noise</summary>
+        <p>
+          Both members of a pair encode the identical protein, so the only available signal is
+          synonymous codon choice &mdash; which is exactly why a 73&ndash;94% nucleotide
+          identity spread (median 81%, measured over the 145 untruncated demo pairs) means
+          something rather than being measurement noise. It will not transfer to output from
+          other codon-optimization tools, and it has no bearing on biosecurity screening; it
+          measures whether a model can recognize this one generator's output, on a narrow slice
+          of life.
+        </p>
+      </details>
+
+      <div class="caveat">
+        <strong>Worth knowing:</strong> rows strictly alternate natural / generated in the
+        source file, so a naive shuffle or split leaks the label &mdash; splits must be
+        grouped by the underlying gene.
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== WHAT WE CHOSE NOT TO BUILD ==================== -->
+  <section id="not-built" class="section not-built">
+    <div class="wrap wrap-narrow">
+      <p class="kicker">The road not taken</p>
+      <h2>What was chosen not to build</h2>
+      <p>
+        Refusing a false label is easy to say and easy to skip once a shortcut is sitting
+        right there. Two of those shortcuts were considered and deliberately left alone.
+      </p>
+      <div class="not-built-grid">
+        <div class="not-built-card">
+          <h3>A constructed Addgene&nbsp;vs.&nbsp;RefSeq set</h3>
+          <p>
+            A large natural-vs-engineered dataset could be built quickly by pairing engineered
+            Addgene plasmids against natural RefSeq or PLSDB sequences. It wasn't. The classes
+            would differ by database, assembly pipeline and GC content as much as by
+            engineering &mdash; a model would score well by learning the source, not the
+            biology.
+          </p>
+        </div>
+        <div class="not-built-card">
+          <h3>A global claim from event-relative FELIX labels</h3>
+          <p>
+            The Supporting Information distinguishes what a recorded event introduced from host
+            context it did not introduce. Promoting class 0 to &ldquo;globally natural&rdquo; or the
+            whole set to a general engineering benchmark would exceed that evidence. Records such
+            as <code>insertion.site</code> are excluded where neither emitted class is established.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ COMPARISON ============================ -->
+  <section id="comparison" class="section comparison">
+    <div class="wrap">
+      <p class="kicker">At a glance</p>
+      <h2>All five, side by side</h2>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Source</th>
+              <th scope="col">The brief's claim</th>
+              <th scope="col">Honest target</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Addgene / GEAC</th>
+              <td>Natural vs. engineered plasmids</td>
+              <td>Lab of origin &mdash; <code>lab_id</code>, 1,314 classes</td>
+              <td><span class="badge badge--reframed">Reframed</span></td>
+            </tr>
+            <tr>
+              <th scope="row">FELIX / GUARDIAN</th>
+              <td>Natural vs. engineered, via <code>engineered</code></td>
+              <td>Genetic part role, 8 classes</td>
+              <td><span class="badge badge--reframed">Reframed</span></td>
+            </tr>
+            <tr>
+              <th scope="row">FELIX Supporting Information</th>
+              <td>Added after the original four-source audit</td>
+              <td>Host context not introduced by a recorded event vs. sequence introduced by it</td>
+              <td><span class="badge badge--confirmed">Narrow event contrast</span></td>
+            </tr>
+            <tr>
+              <th scope="row">SeqScreen / FunSoC</th>
+              <td>Natural vs. engineered, via &ldquo;sequence of concern&rdquo;</td>
+              <td>32 pathogenicity mechanisms, multilabel</td>
+              <td><span class="badge badge--reframed">Reframed</span></td>
+            </tr>
+            <tr>
+              <th scope="row">CodonTransformer</th>
+              <td>General natural vs. engineered</td>
+              <td>Natural CDS vs. CodonTransformer-generated &mdash; <code>target</code></td>
+              <td><span class="badge badge--confirmed">One-generator contrast</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== SOURCES ============================== -->
+  <section id="sources" class="section sources">
+    <div class="wrap wrap-narrow">
+      <p class="kicker">Show the work</p>
+      <h2>Sources</h2>
+      <p>Every figure on this page is pulled from these documents. Nothing here is asserted without a source.</p>
+      <ul class="source-list">
+        <li>
+          <a href="../reports/source_audit.md">reports/source_audit.md</a>
+          <span>The full evidence for every claim above &mdash; opens as plain markdown.</span>
+        </li>
+        <li>
+          <a href="../reports/unresolved_questions.md">reports/unresolved_questions.md</a>
+          <span>What's still genuinely open, including the two roads not taken above.</span>
+        </li>
+        <li>
+          <a href="../reports/monday_demo_checklist.md">reports/monday_demo_checklist.md</a>
+          <span>A walkthrough of the pipeline and its outputs.</span>
+        </li>
+        <li>
+          <a href="../README.md">README.md</a>
+          <span>The full technical documentation for the pipeline that produces these files.</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p>nexus&#8209;genomics &mdash; four original claims audited, one narrower source added, nothing fabricated.</p>
+    <a href="#hero">Back to top &uarr;</a>
+  </div>
+</footer>
+
+<script src="script.js" defer></script>
+</body>
+</html>

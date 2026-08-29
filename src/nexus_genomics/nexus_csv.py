@@ -230,6 +230,33 @@ def write_nexus_csv(
     header = _header(columns)
     warn_if_large(len(rows), len(header), path.name)
 
+    documented = manifest.get("label_semantics")
+    allowed_targets: set[int] | None = None
+    if documented is not None:
+        if not isinstance(documented, Mapping):
+            raise TypeError("manifest label_semantics must be a mapping when present")
+        allowed_targets = set()
+        for raw_key in documented:
+            if type(raw_key) is int:
+                allowed_targets.add(raw_key)
+            elif isinstance(raw_key, str):
+                try:
+                    parsed_key = int(raw_key)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"manifest label_semantics key {raw_key!r} is not an integer class"
+                    ) from exc
+                if str(parsed_key) != raw_key:
+                    raise ValueError(
+                        f"manifest label_semantics key {raw_key!r} is not a canonical integer"
+                    )
+                allowed_targets.add(parsed_key)
+            else:
+                raise TypeError(
+                    "manifest label_semantics keys must be exact integers or canonical "
+                    f"integer strings, got {raw_key!r} ({type(raw_key).__name__})"
+                )
+
     for row in rows:
         if len(row.features) != n_features:
             raise ValueError(
@@ -241,6 +268,32 @@ def write_nexus_csv(
                 f"{path.name}: row {row.sample_id!r} has {len(row.targets)} targets but the "
                 f"header declares {n_targets}"
             )
+        for value in row.targets:
+            if type(value) is not int:
+                raise TypeError(
+                    f"{path.name}: row {row.sample_id!r} target values must be exact Python "
+                    f"integers; got {value!r} ({type(value).__name__}). Refusing rather than "
+                    f"coercing a categorical label."
+                )
+            if allowed_targets is not None and value not in allowed_targets:
+                raise ValueError(
+                    f"{path.name}: row {row.sample_id!r} target value {value} is not "
+                    f"documented by label_semantics {sorted(allowed_targets)}"
+                )
+
+    if sample_metadata is None:
+        raise ValueError(
+            f"{path.name}: sample metadata is required for every row so the table can be "
+            f"bound to a complete provenance sidecar"
+        )
+    table_ids = [row.sample_id for row in rows]
+    sample_ids = [record.get(INDEX_COLUMN) for record in sample_metadata]
+    if sample_ids != table_ids:
+        raise ValueError(
+            f"{path.name}: samples sidecar IDs must exactly match table sample_id order; "
+            f"table has {len(table_ids)} and sidecar has {len(sample_ids)}"
+        )
+    require_unique([str(value) for value in sample_ids], f"{path.name} samples sidecar")
 
     buffer = io.StringIO(newline="")
     writer = csv.writer(buffer, lineterminator=_LINE_TERMINATOR)
@@ -257,6 +310,8 @@ def write_nexus_csv(
     # The digest covers the table only. `generated_at` lives in the manifest and changes on
     # every run, so folding the manifest in would make the reproducibility check vacuous.
     content_hash = blake2b_256(table.encode("utf-8"))
+    samples_csv = _samples_csv(sample_metadata)
+    samples_content_hash = blake2b_256(samples_csv.encode("utf-8"))
 
     sidecar = {
         "format": FORMAT,
@@ -269,14 +324,16 @@ def write_nexus_csv(
             "n_targets": n_targets,
             "content_hash": content_hash,
             "content_hash_algorithm": CONTENT_HASH_ALGORITHM,
+            "samples_content_hash": samples_content_hash,
+            "samples_content_hash_algorithm": CONTENT_HASH_ALGORITHM,
+            "samples_n_rows": len(sample_metadata),
         },
     }
 
     staged = StagedWrite()
     staged.add_bytes(path, table.encode("utf-8"))
     staged.add_text(manifest_path(path), canonical_json(sidecar))
-    if sample_metadata:
-        staged.add_text(samples_path(path), _samples_csv(sample_metadata))
+    staged.add_text(samples_path(path), samples_csv)
     return staged.commit()
 
 
