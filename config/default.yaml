@@ -1,0 +1,80 @@
+# nexus-genomics default configuration.
+#
+# Every value here reaches the sidecar of every file this run produces, and the digest of
+# this file is recorded as `config_hash`, so a written CSV always says which settings made
+# it.
+
+encoding:
+  # A=1 .. Z=26, 0 reserved for padding. `letter` is the only implemented mode.
+  # `codon` and `amino_acid_translated` are defined and refused with an explanation --
+  # they are not silently approximated. See src/nexus_genomics/encoding.py.
+  mode: letter
+
+output:
+  target_layout: native
+
+window:
+  # 1,000 nucleotide positions -> 1,002 columns with the primary key and target.
+  # Chosen as a starting point; raise it when Nexus's real column ceiling is known.
+  # For reference, the sibling qecgen project has shipped a 21,866-column CSV, so wide
+  # tables are not unprecedented -- but that file is 4.38 GB and pandas struggles with it.
+  length: 1000
+
+  # pad_or_truncate -> exactly one row per sequence; anything past `length` is discarded
+  #                    and the discarded amount is recorded per sample.
+  # window           -> one row per window, nothing discarded; the final window is padded.
+  policy: pad_or_truncate
+  stride: 1000
+
+  # Cap on rows generated from a single sequence under the `window` policy, so one 52 kb
+  # feature cannot dominate a demo file. Applied deterministically and counted in the
+  # sidecar as `windows_dropped_by_cap`. Set to null for no cap.
+  max_windows_per_sample: 8
+
+validation:
+  # Rows decoded back to letters and checked against the digest recorded per sample.
+  round_trip_sample_size: 25
+  round_trip_seed: 0
+
+sources:
+  codontransformer:
+    enabled: true
+    demo:
+      max_pairs: 500          # -> 1,000 rows (each pair emits a natural and a generated row)
+      n_windows: 8            # evenly spaced HTTP Range reads across the 6.08 GB source
+      window_bytes: 1000000
+      generated_column: finetune_dna   # or base_dna, the pre-fine-tuning model
+    full:
+      max_pairs: 25000
+      n_windows: 40
+      window_bytes: 4000000
+      generated_column: finetune_dna
+
+  seqscreen:
+    enabled: true
+    demo:
+      max_records: 600
+      batch: 100              # accessions per UniProt REST request
+    full:
+      max_records: 13500      # the whole curated set is 13,203 accessions
+      batch: 200
+
+  felix:
+    # Emits genetic PART ROLE (multiclass annotation), NOT natural-versus-engineered.
+    # Only 280 of the 1,670 sequences in the public repo can be linked to GUARDIAN's
+    # engineered enum at all, and every one of those 280 is the `engineered` value -- a
+    # binary file built here would contain exactly one class. See the adapter docstring.
+    enabled: true
+    demo:
+      max_records: 400
+    full:
+      max_records: null
+
+  addgene:
+    # Multiclass lab-of-origin. Requires a gated manual download; see the adapter docstring.
+    # Outputs must stay local: the competition rules prohibit redistribution.
+    enabled: true
+    demo:
+      max_records: 500
+    full:
+      max_records: null

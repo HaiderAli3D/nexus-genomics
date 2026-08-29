@@ -1,0 +1,31 @@
+# Raw downloads. Never committed: two sources are gated and one forbids redistribution.
+data/raw/
+data/interim/
+
+# Generated. Reproducible from `convert-all`; the sidecars record the exact inputs.
+# NOTE: addgene_* outputs must NEVER be committed even if you relax this -- the DrivenData
+# competition rules prohibit redistributing the data or anything derived from it.
+outputs/
+!outputs/.gitkeep
+
+# Generated reports. Excluded for the same reason as outputs/: once the GEAC files are
+# present, validation_report.* carries per-class row counts collapsed from train_labels.csv
+# and blake2b digests of both gated files, and source_audit_status.md reflects local state.
+# The hand-written reports (source_audit.md, unresolved_questions.md,
+# monday_demo_checklist.md) are NOT generated and are kept.
+reports/validation_report.json
+reports/validation_report.md
+reports/source_audit_status.md
+
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local tool/session state, not project content.
+.loki/
+.remember/
+.superpowers/

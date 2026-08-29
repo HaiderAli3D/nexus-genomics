@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nexus-genomics"
+version = "0.1.0"
+description = "Convert public genomic datasets into a Nexus-shaped CSV (compatibility unverified), without inventing labels"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+
+# Pinned exactly, following the house style in C:\Projects\qecgen. The reason is the same:
+# a generated dataset is reproducible only if the code that generated it is. `content_hash`
+# in every sidecar is a promise that re-running this pipeline reproduces the bytes, and a
+# compatible-release range would let a pandas or numpy point release quietly break it.
+dependencies = [
+    "pandas==2.3.3",
+    "numpy==2.3.3",
+    "PyYAML==6.0.3",
+    "requests==2.31.0",
+    "typer==0.27.1",
+    "rich==14.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.16.2",
+    "mypy==2.3.0",
+    "pandas-stubs==2.3.3.251201",
+    "types-PyYAML==6.0.12.20260815",
+    "types-requests==2.33.0.20260712",
+]
+
+# Live CodonTransformer inference. Deliberately an extra and deliberately NOT on the
+# critical path: Zenodo record 13262517 already ships natural and model-generated sequences
+# side by side in the same row, so the shipped dataset needs no model at all. This extra
+# exists only for the optional `verify-generation` cross-check.
+#
+# It must never become a silent fallback. CodonTransformer pins `numpy<2.0.0` while this
+# project pins `numpy==2.3.3`; installing it downgrades numpy underneath everything else.
+# Install it into a SEPARATE environment, never alongside the core dependencies.
+generate = [
+    "CodonTransformer==1.6.7",
+]
+
+[project.scripts]
+nexus-genomics = "nexus_genomics.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["nexus_genomics*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unreachable = true
+disallow_any_generics = true
+
+[[tool.mypy.overrides]]
+module = ["yaml.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "network: hits a live third-party endpoint; deselect with -m 'not network'",
+]
+filterwarnings = ["error::DeprecationWarning"]
