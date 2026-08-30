@@ -71,6 +71,13 @@ meaning "no data here" (padding). That's a deliberate, boring choice: it's exact
 project asking for this data requested, and boring is good when the point is that a stranger can
 read the manifest and know precisely what they're looking at.
 
+## What does column X actually mean?
+
+Every output file's variables — what `position_0001` represents, what each value of `target`
+means for that specific dataset, what the extra columns in the `.ml.samples.csv` sidecar are —
+are documented in [`DATA_DICTIONARY.md`](DATA_DICTIONARY.md), including the exact class map for
+FELIX's 8 part-role categories and FunSoC's 32 pathogenicity mechanisms.
+
 ## Confidence, not just claims
 
 Before calling any of this finished, we had it reviewed adversarially — separate passes

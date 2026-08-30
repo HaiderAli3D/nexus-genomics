@@ -4,6 +4,8 @@ Convert public genomic datasets into a Nexus-shaped CSV (compatibility unverifie
 
 New here? [`GUIDE.md`](GUIDE.md) is a five-minute, plain-language walkthrough of what this project
 found and how to run it. This README is the complete technical reference underneath that.
+Looking for what a specific column or encoded value means? See
+[`DATA_DICTIONARY.md`](DATA_DICTIONARY.md).
 
 > **Nexus compatibility is not claimed.** The Nexus input format is not published. These
 > files match the CSV shape described in the brief and mirror the conventions of the
